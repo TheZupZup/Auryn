@@ -89,3 +89,17 @@ You must own a valid Qobuz account.
 ---
 
 Made with curiosity and coffee ☕
+
+
+## Good First Issues
+
+This project is beginner-friendly.
+
+If you're new to open source, here are some ideas:
+- Improve error handling
+- Refactor parts of the script
+- Improve the desktop entry
+- Add basic tests
+- Improve UI messages
+
+Feel free to open an issue before submitting a PR.
