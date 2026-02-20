@@ -12,7 +12,6 @@ This project was created with the help of ChatGPT as part of my learning journey
 I am curious, motivated, and continuously improving my understanding of the codebase.
 
 ---
-
 ## 🎯 Goal
 
 Make a simple, beginner-friendly GUI for Streamrip that:
@@ -79,3 +78,12 @@ You must own a valid Qobuz account.
 ---
 
 Made with curiosity and coffee ☕
+
+
+
+## Installation
+
+```bash
+pipx install streamrip
+cp Qrip ~/.local/bin/
+chmod +x ~/.local/bin/Qrip
