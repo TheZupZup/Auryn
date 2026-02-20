@@ -48,6 +48,7 @@ If you're a developer and would like to help, you're more than welcome.
 ## Installation
 
 ```bash
+sudo apt install zenity pipx git
 git clone https://github.com/TheZupZup/Qrip.git
 cd Qrip
 pipx install streamrip
