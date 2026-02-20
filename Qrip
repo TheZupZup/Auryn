@@ -1,0 +1,289 @@
+#!/usr/bin/env bash
+# qobuz-ui.sh
+#
+# Qobuz Downloader UI (Zenity wrapper for streamrip "rip")
+# -------------------------------------------------------
+# Goals:
+# - Provide a simple GUI on Linux Mint (and most distros) to download from Qobuz using streamrip.
+# - Ask user for: Qobuz URL + Destination folder.
+# - Run `rip url <URL>` and show a progress dialog.
+# - Keep logs for debugging.
+# - Avoid the common "Skipping track... marked as downloaded" issue by using an isolated config/db per run.
+#
+# IMPORTANT:
+# - This script does NOT contain Qobuz keys or DRM circumvention.
+# - It is only a UI wrapper around streamrip/streamrip (rip).
+#
+# Dependencies:
+# - bash
+# - zenity
+# - streamrip installed as `rip` (recommended via `pipx install streamrip`)
+#
+# Suggested install paths:
+# - ~/.local/bin/qobuz-ui
+# - ~/.local/share/applications/qobuz-downloader.desktop
+
+set -euo pipefail
+
+APP_NAME="Qrip"
+APP_TITLE="Qrip"
+STATE_DIR="${HOME}/.local/state/qobuz-ui"
+LOG_DIR="${STATE_DIR}/logs"
+
+# Where streamrip normally stores config:
+#   ~/.config/streamrip/config.toml
+# We will copy it into an isolated per-run config folder to avoid db collisions.
+DEFAULT_CFG="${HOME}/.config/streamrip/config.toml"
+
+# ---------- Helpers ----------
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+die_gui() {
+  local msg="$1"
+  zenity --error --title="$APP_NAME" --text="$msg" >/dev/null 2>&1 || true
+  exit 1
+}
+
+info_gui() {
+  local msg="$1"
+  zenity --info --title="$APP_NAME" --text="$msg" >/dev/null 2>&1 || true
+}
+
+# Safely create folders
+mkdir -p "$LOG_DIR"
+
+# ---------- Dependency checks ----------
+if ! need_cmd zenity; then
+  die_gui "Missing dependency: zenity\n\nInstall it with:\n  sudo apt update && sudo apt install -y zenity"
+fi
+
+if ! need_cmd rip; then
+  die_gui "Missing dependency: rip (streamrip)\n\nRecommended install:\n  sudo apt install -y pipx\n  pipx install streamrip\n\nThen open a NEW terminal once so PATH is updated."
+fi
+
+if [[ ! -f "$DEFAULT_CFG" ]]; then
+  die_gui "streamrip config not found at:\n$DEFAULT_CFG\n\nRun once:\n  rip config\nThen set your Qobuz login in that config file."
+fi
+
+# ---------- UI: Ask for URL + Destination ----------
+# We use a form for URL and a destination path (editable).
+# Then (optional) we can open a folder chooser to make it easier.
+
+# Default destination = whatever is currently in streamrip config (downloads.folder)
+# We extract it from config.toml. It should look like:
+#   folder = "/some/path"
+DEFAULT_DEST="$(grep -E '^\s*folder\s*=' "$DEFAULT_CFG" | head -n 1 | cut -d'"' -f2 || true)"
+if [[ -z "$DEFAULT_DEST" ]]; then
+  DEFAULT_DEST="${HOME}/Music/QobuzDownloads"
+fi
+
+FORM_OUTPUT="$(
+  zenity --forms \
+    --title="$APP_TITLE" \
+    --text="Paste a Qobuz link and choose a download folder" \
+    --add-entry="Qobuz URL" \
+    --add-entry="Destination folder (editable)" \
+    --separator="|" \
+    --width=700 \
+    --height=200 \
+    --forms-date-format="%Y-%m-%d" \
+    -- \
+    "" \
+    "$DEFAULT_DEST" \
+    2>/dev/null
+)" || exit 0
+
+URL="$(echo "$FORM_OUTPUT" | cut -d'|' -f1 | xargs)"
+DEST="$(echo "$FORM_OUTPUT" | cut -d'|' -f2 | xargs)"
+
+if [[ -z "$URL" ]]; then
+  die_gui "No URL provided."
+fi
+
+# If user left DEST empty, or wants to browse, open folder chooser.
+if [[ -z "$DEST" ]]; then
+  DEST="$(zenity --file-selection --directory --title="Choose destination folder" 2>/dev/null)" || exit 0
+fi
+
+# If destination folder doesn't exist, ask to create or browse.
+if [[ ! -d "$DEST" ]]; then
+  if zenity --question --title="$APP_NAME" --text="Destination folder does not exist:\n\n$DEST\n\nCreate it?" >/dev/null 2>&1; then
+    mkdir -p "$DEST"
+  else
+    DEST="$(zenity --file-selection --directory --title="Choose destination folder" 2>/dev/null)" || exit 0
+    [[ -d "$DEST" ]] || die_gui "Invalid destination folder."
+  fi
+fi
+
+# ---------- Create an isolated config for this run ----------
+# This avoids the "downloads.db" remembering old downloads and skipping tracks.
+# We use XDG_CONFIG_HOME to point streamrip to our per-run config location.
+RUN_ID="$(date +'%Y-%m-%d_%H-%M-%S')"
+RUN_DIR="${STATE_DIR}/run/${RUN_ID}"
+RUN_CFG_DIR="${RUN_DIR}/config"
+RUN_STREAMRIP_DIR="${RUN_CFG_DIR}/streamrip"
+RUN_CFG="${RUN_STREAMRIP_DIR}/config.toml"
+RUN_LOG="${LOG_DIR}/${RUN_ID}.log"
+
+mkdir -p "$RUN_STREAMRIP_DIR"
+
+# Copy the user's config.toml, then override downloads.folder to DEST for this run.
+cp -f "$DEFAULT_CFG" "$RUN_CFG"
+
+# Replace the first occurrence of: folder = "..."
+# with the DEST folder.
+# NOTE: we keep it simple; if your config is unusual, we can improve later.
+sed -i '0,/^\s*folder\s*=\s*".*"/s//folder = "'"$(printf '%s' "$DEST" | sed 's/[\/&]/\\&/g')"'" /' "$RUN_CFG" || true
+
+# Remove DB files if they exist (fresh run)
+rm -f "${RUN_STREAMRIP_DIR}/downloads.db" "${RUN_STREAMRIP_DIR}/failed_downloads.db" 2>/dev/null || true
+
+# ---------- Run rip with progress UI ----------
+# Zenity progress expects lines like:
+#   10
+#   # Some message
+# We will:
+# - Show a pulsating bar immediately (always works)
+# - Try to extract track names from rip output and display them as status lines
+# - If we detect track count, we can compute real % (best effort)
+
+# We'll run rip and tee output into log.
+# Using isolated config by setting XDG_CONFIG_HOME
+export XDG_CONFIG_HOME="$RUN_CFG_DIR"
+
+# Progress producer:
+# - prints "pulsate" if percent unknown
+# - prints "# message" as the current track / status
+progress_stream() {
+  local total_tracks=0
+  local done_tracks=0
+  local last_title=""
+
+  # Start at 0
+  echo "0"
+  echo "# Starting download..."
+  echo "pulsate"
+
+  # Read rip output line by line
+  # We try to parse a few common patterns.
+  while IFS= read -r line; do
+    # Always forward line into log (handled by tee outside), but we can also show relevant messages.
+    # Try to detect track titles:
+    # Example patterns vary by tool version; we do best-effort matching.
+    if [[ "$line" =~ Downloading[[:space:]]+track ]]; then
+      # Often line looks like: "Downloading track 'TITLE' ..."
+      if [[ "$line" =~ \'([^\']+)\' ]]; then
+        last_title="${BASH_REMATCH[1]}"
+        echo "# Downloading: $last_title"
+      else
+        echo "# Downloading a track..."
+      fi
+    fi
+
+    # Detect when a track finishes (heuristic):
+    if [[ "$line" =~ Downloaded[[:space:]]+track ]] || [[ "$line" =~ Finished[[:space:]]+track ]]; then
+      done_tracks=$((done_tracks + 1))
+      # If we know total_tracks later, we can compute %.
+    fi
+
+    # Try to detect total track count from output like "Track 3/13" or "3 of 13"
+    if [[ "$total_tracks" -eq 0 ]]; then
+      if [[ "$line" =~ ([0-9]+)[[:space:]]*\/[[:space:]]*([0-9]+) ]]; then
+        total_tracks="${BASH_REMATCH[2]}"
+      elif [[ "$line" =~ of[[:space:]]+([0-9]+) ]]; then
+        total_tracks="${BASH_REMATCH[1]}"
+      fi
+    fi
+
+    # If total is known, emit a real percentage (best effort)
+    if [[ "$total_tracks" -gt 0 ]]; then
+      # Make sure done_tracks doesn't exceed total
+      if [[ "$done_tracks" -gt "$total_tracks" ]]; then
+        done_tracks="$total_tracks"
+      fi
+      local pct=$(( (done_tracks * 100) / total_tracks ))
+      echo "$pct"
+      if [[ -n "$last_title" ]]; then
+        echo "# Downloading: $last_title ($done_tracks/$total_tracks)"
+      else
+        echo "# Downloading... ($done_tracks/$total_tracks)"
+      fi
+    else
+      # We don't know % -> keep pulsating, just show messages.
+      echo "pulsate"
+    fi
+  done
+}
+
+# Run rip + progress UI
+# Note: `rip url "$URL"` is the normal invocation.
+# If it fails, we show the log.
+(
+  echo "10"
+  echo "# Destination: $DEST"
+  echo "pulsate"
+  echo "# URL: $URL"
+  echo "pulsate"
+
+  # We run rip and pipe output into both log and progress parser.
+  # We must preserve exit code of rip, so we use a temporary file + wait.
+  TMP_OUT="${RUN_DIR}/rip.out"
+  mkdir -p "$RUN_DIR"
+
+  # Start rip in background, capture stdout+stderr
+  # shellcheck disable=SC2091
+  ( rip url "$URL" 2>&1 | tee -a "$RUN_LOG" | tee "$TMP_OUT" >/dev/null ) &
+  RIP_PID=$!
+
+  # Parse the output file as it grows (tail -f)
+  # This makes zenity progress update live.
+  # If tail exits early, we still wait for rip.
+  ( tail -n 0 -f "$TMP_OUT" 2>/dev/null | progress_stream ) &
+  TAIL_PID=$!
+
+  wait "$RIP_PID"
+  RIP_CODE=$?
+
+  # Stop tail parser
+  kill "$TAIL_PID" >/dev/null 2>&1 || true
+
+  if [[ "$RIP_CODE" -eq 0 ]]; then
+    echo "100"
+    echo "# Done ✅"
+  else
+    echo "100"
+    echo "# Finished with errors ❌ (see log)"
+  fi
+
+  exit "$RIP_CODE"
+) | zenity --progress \
+    --title="$APP_NAME" \
+    --text="Downloading..." \
+    --auto-close \
+    --no-cancel \
+    --width=520 \
+    --height=120 \
+    2>/dev/null
+
+RIP_EXIT=$?
+
+# If rip failed, show error and offer to open log
+if [[ "$RIP_EXIT" -ne 0 ]]; then
+  zenity --error \
+    --title="$APP_NAME" \
+    --text="Download failed.\n\nLog:\n$RUN_LOG\n\nTip: open the log to see the error reason." \
+    2>/dev/null || true
+
+  if zenity --question --title="$APP_NAME" --text="Open the log file now?" --default-cancel 2>/dev/null; then
+    xdg-open "$RUN_LOG" >/dev/null 2>&1 || true
+  fi
+  exit 1
+fi
+
+# Success: offer to open folder
+if zenity --question --title="$APP_NAME" --text="Download complete ✅\n\nOpen destination folder?" --default-cancel 2>/dev/null; then
+  xdg-open "$DEST" >/dev/null 2>&1 || true
+fi
