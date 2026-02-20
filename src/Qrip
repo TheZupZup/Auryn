@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# qobuz-ui.sh
-#
 # Qrip 
 # Simple Zenity GUI wrapper for streamrip ("rip")
 # -------------------------------------------------------
