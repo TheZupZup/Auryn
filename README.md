@@ -12,7 +12,7 @@ This project was created with the help of ChatGPT as part of my learning journey
 I am curious, motivated, and continuously improving my understanding of the codebase.
 
 ---
-## 🎯 Goal
+## Goal
 
 Make a simple, beginner-friendly GUI for Streamrip that:
 
@@ -25,7 +25,7 @@ Make a simple, beginner-friendly GUI for Streamrip that:
 
 ---
 
-## 💡 Why this project?
+## Why this project?
 
 I wanted something simple, clean, and easy to use.  
 This is also my first real open-source learning experience.
@@ -34,7 +34,7 @@ If you're a developer and would like to help, you're more than welcome.
 
 ---
 
-## 🛠 Current Features
+## Current Features
 
 - URL input  
 - Folder selection  
@@ -43,7 +43,20 @@ If you're a developer and would like to help, you're more than welcome.
 
 ---
 
-## 🚧 Planned Features
+## Installation
+
+## Installation
+
+```bash
+pipx install streamrip
+cp src/Qrip ~/.local/bin/
+chmod +x ~/.local/bin/Qrip
+Qrip
+```
+
+---
+
+## Planned Features
 
 - Real progress tracking (percentage, current track, remaining tracks)  
 - Better error handling  
@@ -52,7 +65,7 @@ If you're a developer and would like to help, you're more than welcome.
 
 ---
 
-## 📦 Distribution Goals
+## Distribution Goals
 
 - Initial release as a `.deb` package for Debian-based distributions (Linux Mint, Ubuntu, etc.)
 - Future goal: make Qrip available across multiple Linux distributions
@@ -62,7 +75,7 @@ Packaging and cross-platform guidance are very welcome.
 
 ---
 
-## 🤝 Contributions
+## Contributions
 
 Contributions, suggestions, and improvements are welcome.
 
@@ -70,7 +83,7 @@ As this is my first open-source project, constructive feedback and guidance are 
 
 ---
 
-## ⚖️ Disclaimer
+## Disclaimer
 
 This project is just a UI wrapper for Streamrip.  
 You must own a valid Qobuz account.
@@ -78,12 +91,3 @@ You must own a valid Qobuz account.
 ---
 
 Made with curiosity and coffee ☕
-
-
-
-## Installation
-
-```bash
-pipx install streamrip
-cp Qrip ~/.local/bin/
-chmod +x ~/.local/bin/Qrip
