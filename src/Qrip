@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Qrip 
 # Simple Zenity GUI wrapper for streamrip ("rip")
+
 # -------------------------------------------------------
+
 # Goals:
 # - Provide a simple GUI on Linux Mint (and most distros) to download from Qobuz using streamrip.
 # - Ask user for: Qobuz URL + Destination folder.
