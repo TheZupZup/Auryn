@@ -81,18 +81,7 @@ If you're a developer and would like to help, you're more than welcome.
 
 Tested on Linux Mint / Debian-based systems.
 
-```bash
-sudo apt update
-sudo apt install zenity pipx git
-git clone https://github.com/TheZupZup/Qrip.git
-cd Qrip
-pipx install streamrip
-cp src/qrip ~/.local/bin/
-chmod +x ~/.local/bin/qrip
-qrip
-```
-
-Or install via the `.deb` package:
+install via the `.deb` package:
 
 ```bash
 sudo dpkg -i qrip_0.1.1_all.deb
