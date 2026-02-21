@@ -95,7 +95,7 @@ qrip
 Or install via the `.deb` package:
 
 ```bash
-sudo dpkg -i qrip_2.0.0_all.deb
+sudo dpkg -i qrip_0.1.1_all.deb
 ```
 
 ---
