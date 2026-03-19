@@ -6,7 +6,8 @@ Qrip is a clean and simple graphical interface for Streamrip, designed for Linux
 
 
 ## Announcement
-Flatpak support is currently in progress.
+- .deb package available in Releases
+- Flatpak support in progress
 
 ---
 
