@@ -4,6 +4,10 @@
 
 Qrip is a clean and simple graphical interface for Streamrip, designed for Linux users who want an easier way to build and manage a high-quality music library.
 
+
+## Anoncement
+Flatpak support is currently in progress.
+
 ---
 
 ## Features
