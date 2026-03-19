@@ -126,10 +126,6 @@ Qrip has no affiliation, partnership, sponsorship, or endorsement with any of th
 
 By using Qrip, you agree to comply with the Terms of Service of any platform you use it with:
 
-- Qobuz Terms of Service
-- Deezer Terms of Service
-- Tidal Terms of Service
-- SoundCloud Terms of Service
 
 - [Qobuz Terms of Service](https://www.qobuz.com/us-en/info/legal/terms-of-use)
 - [Deezer Terms of Service](https://www.deezer.com/legal/cgu)
