@@ -94,38 +94,39 @@ This software is intended for personal use only.
 
 Users are responsible for ensuring that their use of this tool complies with the terms of service of any platforms they access.
 
-The developer of Qrip does not encourage or support any misuse of this software.
+The developer of Qrip does not encourage or support misuse of this software.
 
 ---
 
-### This program DOES NOT include:
+### Limitations
 
-- Code to bypass DRM or regional restrictions
-- Any app IDs, secrets, or private API keys
-- Tools designed to circumvent copyright protection
+This program does not include:
+
+- Any functionality intended to bypass DRM or regional restrictions
+- Any application IDs, secrets, or private API keys
+- Any tools designed to circumvent copyright protection
 
 ---
 
 ### Technical clarification
 
-Qrip is a user interface (UI) wrapper only.
+Qrip is a user interface (UI) wrapper.
 
 It relies on Streamrip (`rip`), which is a separate and independent open-source project.  
-Qrip does not directly interact with any streaming service and only provides a graphical layer for an existing command-line tool.
+Qrip does not directly interact with any streaming service and only provides a graphical interface for an existing command-line tool.
 
 ---
 
 ### Trademarks
 
 Qobuz, Deezer, Tidal, and SoundCloud are registered trademarks of their respective owners.  
-Qrip has no affiliation, partnership, sponsorship, or endorsement with any of these services.
+Qrip is not affiliated with, endorsed by, or sponsored by any of these services.
 
 ---
 
 ### Terms of Service
 
-By using Qrip, you agree to comply with the Terms of Service of any platform you use it with:
-
+Users should ensure that their usage complies with the Terms of Service of the platforms they access, including:
 
 - [Qobuz Terms of Service](https://www.qobuz.com/us-en/info/legal/terms-of-use)
 - [Deezer Terms of Service](https://www.deezer.com/legal/cgu)
