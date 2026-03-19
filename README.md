@@ -88,7 +88,7 @@ Integration with self-hosted media systems
 ---
 ## Disclaimer & Legal
 
-Qrip is a graphical interface for Streamrip and does not provide or host any content.
+Qrip is a graphical interface for Streamrip and does not provide, host, or distribute any content.
 
 This software is intended for personal use only.
 
@@ -96,18 +96,40 @@ Users are responsible for ensuring that their use of this tool complies with the
 
 The developer of Qrip does not encourage or support any misuse of this software.
 
-This program **DOES NOT** include:
+---
 
-- Code to bypass Qobuz's DRM or region restrictions
-- Qobuz app IDs, secrets, or private API keys
-- Any tool designed to circumvent copyright protection
+### This program DOES NOT include:
 
-Qrip is a **UI wrapper only**. It calls [Streamrip](https://github.com/nathom/streamrip) (`rip`) which is a separate, independent open-source project. Qrip does not directly interact with any streaming service — it simply provides a graphical interface around an existing command-line tool.
+- Code to bypass DRM or regional restrictions
+- Any app IDs, secrets, or private API keys
+- Tools designed to circumvent copyright protection
+
+---
+
+### Technical clarification
+
+Qrip is a user interface (UI) wrapper only.
+
+It relies on Streamrip (`rip`), which is a separate and independent open-source project.  
+Qrip does not directly interact with any streaming service and only provides a graphical layer for an existing command-line tool.
+
+---
+
+### Trademarks
 
 Qobuz, Deezer, Tidal, and SoundCloud are registered trademarks of their respective owners.  
-Qrip has no partnership, sponsorship, or endorsement with any of these services.
+Qrip has no affiliation, partnership, sponsorship, or endorsement with any of these services.
+
+---
+
+### Terms of Service
 
 By using Qrip, you agree to comply with the Terms of Service of any platform you use it with:
+
+- Qobuz Terms of Service
+- Deezer Terms of Service
+- Tidal Terms of Service
+- SoundCloud Terms of Service
 
 - [Qobuz Terms of Service](https://www.qobuz.com/us-en/info/legal/terms-of-use)
 - [Deezer Terms of Service](https://www.deezer.com/legal/cgu)
