@@ -79,8 +79,9 @@ Then install:
 sudo dpkg -i qrip.deb
 ```
 
-## Docker 
+## Docker (Advanced / NAS / Server)
 
+```bash
 docker pull thezupzup/qrip
 
 xhost +local:docker
@@ -89,7 +90,7 @@ docker run -e DISPLAY=$DISPLAY \
 -v /tmp/.X11-unix:/tmp/.X11-unix \
 -v $(pwd)/downloads:/root/Music \
 thezupzup/qrip
-
+```
 ---
 
 ## Project Status
