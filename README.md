@@ -4,6 +4,17 @@
 
 Qrip is a clean and simple graphical interface for Streamrip, designed for Linux users who want an easier way to build and manage a high-quality music library.
 
+<p align="center">
+  <img src="assets/qrip.svg" width="120">
+</p>
+
+<p align="center">
+  <img src="assets/qrip_ui.png" width="900">
+</p>
+
+<p align="center">
+  <b>Modern music downloader for Qobuz, Deezer, Tidal & SoundCloud</b>
+</p>
 
 ## Announcement
 - .deb package available in Releases
