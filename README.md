@@ -60,14 +60,11 @@ Qrip is ideal for:
 Music Link → Qrip → Local/NAS Storage → Jellyfin → Playback
 
 
-## Installation
-
-Tested on Linux Mint / Debian-based systems
-
-
 ---
 
 ## Installation
+
+Tested on Linux Mint / Debian-based systems
 
 Download the `.deb` package from the releases section:
 
