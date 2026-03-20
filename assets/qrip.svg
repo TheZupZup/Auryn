@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#C0392B"/>
+    </linearGradient>
+    <linearGradient id="wh" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#FFE0D0" stop-opacity="0.80"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond arrondi -->
+  <rect x="2" y="2" width="60" height="60" rx="14" ry="14" fill="url(#bg)"/>
+  <!-- Reflet haut -->
+  <rect x="2" y="2" width="60" height="26" rx="14" ry="14" fill="rgba(255,255,255,0.08)"/>
+
+  <!-- Note de musique (croche) -->
+  <ellipse cx="20" cy="46" rx="8" ry="5.5" fill="url(#wh)"/>
+  <rect x="27.5" y="17" width="3.5" height="29" rx="1.5" fill="url(#wh)"/>
+  <path d="M31 17 Q50 21 48 33 Q44 27 31 25 Z" fill="url(#wh)"/>
+
+  <!-- Cercle download -->
+  <circle cx="46" cy="46" r="12" fill="rgba(0,0,0,0.20)"/>
+  <!-- Flèche download -->
+  <line x1="46" y1="38" x2="46" y2="48" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="41,45 46,51 51,45" stroke="white" stroke-width="2.5" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="40" y1="54" x2="52" y2="54" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+</svg>
