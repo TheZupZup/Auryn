@@ -134,6 +134,16 @@ def download_cover(cover_url, size=185):
         return None
 
 
+def resolve_config_dir() -> str:
+    """
+    Resolve configuration directory according to XDG_CONFIG specification.
+    """
+    config_home = os.getenv("XDG_CONFIG_HOME")
+    if config_home is not None:
+        return os.getenv("XGD_CONFIG_HOME")
+    return "~/.config"
+
+
 class QripApp(Gtk.Window):
 
     def __init__(self):
@@ -459,7 +469,9 @@ class QripApp(Gtk.Window):
             GLib.idle_add(self.cover_lbl.set_markup, '<span foreground="#555555" size="small">Cover Art</span>')
 
     def _run_download(self, url, quality):
-        cfg = os.path.expanduser("~/.config/streamrip/config.toml")
+
+        cfg_path = os.path.join(resolve_config_dir(), "streamrip", "config.toml")
+        cfg = os.path.expanduser(cfg_path)
         db  = os.path.expanduser("~/.config/streamrip/downloads.db")
 
         if os.path.exists(db):
@@ -747,6 +759,7 @@ class QripApp(Gtk.Window):
 
 if __name__ == "__main__":
     win = QripApp()
+
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
     Gtk.main()
