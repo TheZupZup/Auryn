@@ -1,5 +1,5 @@
 # Qrip
-[![Download](https://img.shields.io/badge/Download-.deb-blue?style=for-the-badge)](https://github.com/TheZupZup/Qrip/releases/latest)
+[![Download](https://img.shields.io/badge/Download-.deb-blue?style=for-the-badge)](https://codeberg.org/TheZupZup/Qrip/releases)
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
 
 Qrip is a clean and simple graphical interface for Streamrip, designed for Linux users who want an easier way to build and manage a high-quality music library.
@@ -68,7 +68,7 @@ Tested on Linux Mint / Debian-based systems
 
 Download the `.deb` package from the releases section:
 
-https://github.com/TheZupZup/Qrip/releases
+https://codeberg.org/TheZupZup/Qrip/releases
 
 Then install:
 
