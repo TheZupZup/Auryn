@@ -140,8 +140,8 @@ def resolve_config_dir() -> str:
     """
     config_home = os.getenv("XDG_CONFIG_HOME")
     if config_home is not None:
-        return os.getenv("XDG_CONFIG_HOME")
-    return "~/.config"
+        return os.path.join(config_home, "streamrip")
+    return "~/.config/streamrip"
 
 
 class QripApp(Gtk.Window):
@@ -470,7 +470,7 @@ class QripApp(Gtk.Window):
 
     def _run_download(self, url, quality):
 
-        cfg_path = os.path.join(resolve_config_dir(), "streamrip", "config.toml")
+        cfg_path = os.path.join(resolve_config_dir(), "config.toml")
         cfg = os.path.expanduser(cfg_path)
         db  = os.path.expanduser("~/.config/streamrip/downloads.db")
 
