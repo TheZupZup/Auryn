@@ -2,7 +2,7 @@
 [![Download](https://img.shields.io/badge/Download-.deb-blue?style=for-the-badge)](https://codeberg.org/TheZupZup/Qrip/releases)
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
 
-Qrip is a clean and simple graphical interface for Streamrip, designed for Linux users who want an easier way to build and manage a high-quality music library.
+Qrip is a graphical interface for an existing open-source tool. It does not provide, host, or distribute any content.
 
 <p align="center">
   <img src="assets/qrip.svg" width="120">
@@ -25,16 +25,16 @@ Qrip is a clean and simple graphical interface for Streamrip, designed for Linux
 ## Features
 
 - Simple and intuitive UI for Streamrip
-- Download music from supported services (Qobuz, etc.)
-- Built for FLAC / high-quality audio
+- Manage and organize local audio libraries
+- Support for high-quality audio formats (FLAC, etc.)
 - Real-time progress and logs
-- One-click experience (no terminal required)
+- One-click workflow (no terminal required)
 
 ---
 
 ## Why Qrip?
 
-Qrip was created to simplify the process of building a personal music library without relying entirely on streaming platforms.
+building and managing a personal local audio library
 
 It is designed for users who want:
 
@@ -57,7 +57,7 @@ Qrip is ideal for:
 ---
 
 ## Workflow
-Music Link → Qrip → Local/NAS Storage → Jellyfin → Playback
+Input Source → Qrip → Local/NAS Library → Media Server → Playback
 
 
 ---
