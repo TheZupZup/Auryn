@@ -13,7 +13,7 @@ Qrip is a graphical interface for an existing open-source tool. It does not prov
 </p>
 
 <p align="center">
-  <b>Modern music downloader for Qobuz, Deezer, Tidal & SoundCloud</b>
+  <b>Modern graphical interface for an existing open-source audio tool</b>
 </p>
 
 ## Announcement
