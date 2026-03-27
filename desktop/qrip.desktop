@@ -1,3 +1,4 @@
+#!/usr/bin/env xdg-open
 [Desktop Entry]
 Name=Qrip
 Comment=Simple GTK GUI wrapper for streamrip
