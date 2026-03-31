@@ -1,5 +1,5 @@
 # Auryn
-[![Download](https://img.shields.io/badge/Download-.deb-blue?style=for-the-badge)]([https://github.com/TheZupZup/Auryn/releases](https://github.com/TheZupZup/Auryn/releases/tag/v0.1.1))
+[![Download](https://img.shields.io/badge/Download-.deb-blue?style=for-the-badge)](](https://github.com/TheZupZup/Auryn/releases/tag/v0.1.1))
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
 
 Auryn is a graphical interface for an existing open-source tool. It does not provide, host, or distribute any content.
