@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-<<<<<<< HEAD
-# Qrip 
+# Qrip
 # Simple Zenity GUI wrapper for streamrip ("rip")
 
 # -------------------------------------------------------
@@ -24,21 +23,15 @@
 # Suggested install paths:
 # - ~/.local/bin/Qrip
 # - ~/.local/share/applications/Qrip.desktop
-=======
-# Qrip v2.0.0
 # Graphical wrapper for streamrip with auto-organization for NAS
 # Supports: Qobuz, Tidal, Deezer, SoundCloud
->>>>>>> 89c048c (Upgrade to v0.2.0: Python GTK3 interface and metadata support)
 
 set -euo pipefail
 
 # --- Settings & Paths ---
 APP_NAME="Qrip"
-<<<<<<< HEAD
 APP_TITLE="Qrip"
-=======
 APP_VERSION="2.0.0"
->>>>>>> 89c048c (Upgrade to v0.2.0: Python GTK3 interface and metadata support)
 STATE_DIR="${HOME}/.local/state/qrip"
 LOG_DIR="${STATE_DIR}/logs"
 CFG_FILE="${HOME}/.config/streamrip/config.toml"
