@@ -15,6 +15,7 @@ import subprocess
 import urllib.request
 import json
 import tempfile
+import shutil
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
@@ -125,6 +126,15 @@ def resolve_config_dir():
     return os.path.join(xdg, "streamrip")
 
 
+def resolve_state_dir():
+    xdg = os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state"))
+    return os.path.join(xdg, "qrip")
+
+
+def toml_escape(value):
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  QripApp — charge l'UI depuis Qrip.ui
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,9 +165,11 @@ class QripApp:
         self.btn_download  = self.builder.get_object("btn_download")
         self.btn_stop      = self.builder.get_object("btn_stop")
         self.btn_about     = self.builder.get_object("btn_about")
+        self.btn_setup     = self.builder.get_object("btn_setup")
         self.btn_choose    = self.builder.get_object("btn_choose_folder")
         self.btn_open      = self.builder.get_object("btn_open_folder")
         self.btn_log       = self.builder.get_object("btn_open_log")
+        self.cb_clear_cache = self.builder.get_object("cb_clear_cache")
         self.folder_lbl    = self.builder.get_object("folder_lbl")
         self.status_lbl    = self.builder.get_object("status_lbl")
         self.progress_bar  = self.builder.get_object("progress_bar")
@@ -201,6 +213,8 @@ class QripApp:
         self.btn_open.set_can_focus(True)
         self.btn_log.set_can_focus(True)
         self.btn_about.set_can_focus(True)
+        self.btn_setup.set_can_focus(True)
+        self.cb_clear_cache.set_can_focus(True)
         for cb in self._quality_checks:
             cb.set_can_focus(True)
 
@@ -221,6 +235,7 @@ class QripApp:
         self.btn_download.connect("clicked", self._on_download)
         self.btn_stop.connect("clicked", self._on_stop)
         self.btn_about.connect("clicked", self._show_about)
+        self.btn_setup.connect("clicked", self._show_setup_wizard)
         self.btn_choose.connect("clicked", self._choose_folder)
         self.btn_open.connect("clicked", self._open_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
@@ -231,6 +246,7 @@ class QripApp:
         # ── Afficher ──
         self.window.show_all()
         self.btn_stop.hide()
+        GLib.idle_add(self._first_run_health_check)
 
     # ── Qualité ──────────────────────────────────────────────────────────────
 
@@ -268,7 +284,7 @@ class QripApp:
         subprocess.Popen(["xdg-open", self._dest_folder])
 
     def _open_log_folder(self, *_):
-        log_dir = os.path.expanduser("~/.local/state/qrip")
+        log_dir = resolve_state_dir()
         os.makedirs(log_dir, exist_ok=True)
         subprocess.Popen(["xdg-open", log_dir])
 
@@ -278,6 +294,18 @@ class QripApp:
         url = self.url_entry.get_text().strip()
         if not url:
             self._set_status("⚠   Please paste a URL first.", "error")
+            return
+        service, _ = detect_service_and_id(url)
+        if service is None:
+            self._set_status("⚠  URL not recognized (Qobuz/Deezer/Tidal/SoundCloud).", "error")
+            self._log("⚠  Unsupported URL format.\n", "error")
+            return
+        ok, issues = self._run_preflight_checks(auto_fix=False)
+        if not ok:
+            self._set_status("❌  Setup issue detected — open Setup.", "error")
+            self._log("❌  Preflight checks failed:\n", "error")
+            for issue in issues:
+                self._log(f"   • {issue}\n", "error")
             return
         os.makedirs(self._dest_folder, exist_ok=True)
         self.btn_download.set_sensitive(False)
@@ -377,12 +405,132 @@ class QripApp:
 
     # ── Lancement streamrip ───────────────────────────────────────────────────
 
+    def _find_rip_path(self):
+        for candidate in [
+            os.path.expanduser("~/.local/bin/rip"),
+            "/usr/local/bin/rip",
+            "/usr/bin/rip",
+        ]:
+            if os.path.isfile(candidate):
+                return candidate
+        try:
+            result = subprocess.run(["which", "rip"], capture_output=True, text=True)
+            if result.returncode == 0:
+                found = result.stdout.strip()
+                if found:
+                    return found
+        except Exception:
+            pass
+        return None
+
+    def _check_dest_writable(self):
+        try:
+            os.makedirs(self._dest_folder, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=self._dest_folder, delete=True):
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _run_preflight_checks(self, auto_fix=False):
+        issues = []
+        rip_path = self._find_rip_path()
+        if not rip_path:
+            issues.append("streamrip (rip) is not installed or not in PATH.")
+
+        cfg_path = os.path.join(resolve_config_dir(), "config.toml")
+        if not os.path.exists(cfg_path):
+            if auto_fix and rip_path:
+                try:
+                    result = subprocess.run([rip_path, "config", "reset"], capture_output=True, text=True)
+                    if result.returncode != 0:
+                        issues.append("Unable to generate streamrip config automatically.")
+                except Exception:
+                    issues.append("Unable to run `rip config reset` automatically.")
+            if not os.path.exists(cfg_path):
+                issues.append("streamrip config.toml is missing (run: rip config reset).")
+
+        if not self._check_dest_writable():
+            issues.append(f"Destination is not writable: {self._dest_folder}")
+
+        return (len(issues) == 0, issues)
+
+    def _update_streamrip_config(self, cfg_path, quality):
+        if not os.path.exists(cfg_path):
+            return False
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            content = re.sub(r"(?m)^quality\s*=.*$", f"quality = {quality}", content)
+            content = re.sub(r"(?m)^use_auth_token\s*=.*$", "use_auth_token = true", content)
+
+            safe_folder = toml_escape(self._dest_folder)
+            if re.search(r"(?m)^folder\s*=.*$", content):
+                content = re.sub(r"(?m)^folder\s*=.*$", f'folder = "{safe_folder}"', content, count=1)
+            else:
+                content += f'\nfolder = "{safe_folder}"\n'
+
+            tmp_path = cfg_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            shutil.move(tmp_path, cfg_path)
+            return True
+        except Exception as e:
+            GLib.idle_add(self._log, f"⚠  Could not update config.toml safely: {e}\n", "error")
+            return False
+
+    def _first_run_health_check(self):
+        ok, issues = self._run_preflight_checks(auto_fix=False)
+        if ok:
+            self._set_status("✅  Setup check passed — ready.", "ok")
+        else:
+            self._set_status("⚠  Setup incomplete — click Setup.", "error")
+            self._log("⚠  Startup checks found issues:\n", "info")
+            for issue in issues:
+                self._log(f"   • {issue}\n", "info")
+        return False
+
+    def _show_setup_wizard(self, *_):
+        ok, issues = self._run_preflight_checks(auto_fix=False)
+        if ok:
+            body = "Everything looks good.\n\nYou can start downloads safely."
+            status = "✅ Setup OK"
+        else:
+            body = "Issues detected:\n- " + "\n- ".join(issues)
+            status = "⚠ Setup needs attention"
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.INFO if ok else Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text=status,
+        )
+        dlg.format_secondary_text(body)
+        if not ok:
+            dlg.add_button("Auto-fix", 1)
+        dlg.add_button("Close", Gtk.ResponseType.CLOSE)
+        response = dlg.run()
+        dlg.destroy()
+
+        if response == 1:
+            fixed_ok, fixed_issues = self._run_preflight_checks(auto_fix=True)
+            if fixed_ok:
+                self._set_status("✅  Setup auto-fix completed.", "ok")
+                self._log("✅  Setup auto-fix completed successfully.\n", "ok")
+            else:
+                self._set_status("❌  Setup still incomplete.", "error")
+                self._log("❌  Setup auto-fix could not solve all issues:\n", "error")
+                for issue in fixed_issues:
+                    self._log(f"   • {issue}\n", "error")
+
     def _run_download(self, url, quality):
         cfg_path = os.path.join(resolve_config_dir(), "config.toml")
         cfg = os.path.expanduser(cfg_path)
-        db  = os.path.expanduser("~/.config/streamrip/downloads.db")
+        db = os.path.join(resolve_config_dir(), "downloads.db")
 
-        if os.path.exists(db):
+        if self.cb_clear_cache.get_active() and os.path.exists(db):
             try:
                 os.remove(db)
                 GLib.idle_add(self._log, "🧹  Cache cleared.\n", "info")
@@ -390,32 +538,13 @@ class QripApp:
                 pass
 
         if os.path.exists(cfg):
-            subprocess.run(["sed", "-i", f"s/^quality = .*/quality = {quality}/", cfg], check=False)
-            subprocess.run(["sed", "-i", "s/use_auth_token = .*/use_auth_token = true/", cfg], check=False)
-            subprocess.run(["sed", "-i",
-                f'0,/^folder = .*/s||folder = "{self._dest_folder}"|', cfg], check=False)
+            self._update_streamrip_config(cfg, quality)
 
         GLib.idle_add(self._log, f"🌐  URL     : {url}\n", "info")
         GLib.idle_add(self._log, f"🎵  Quality : {quality} | Dest : {self._dest_folder}\n", "info")
         GLib.idle_add(self._log, "─" * 60 + "\n", "dim")
 
-        rip_path = None
-        for candidate in [
-            os.path.expanduser("~/.local/bin/rip"),
-            "/usr/local/bin/rip",
-            "/usr/bin/rip",
-        ]:
-            if os.path.isfile(candidate):
-                rip_path = candidate
-                break
-
-        if not rip_path:
-            try:
-                result = subprocess.run(["which", "rip"], capture_output=True, text=True)
-                if result.returncode == 0:
-                    rip_path = result.stdout.strip()
-            except Exception:
-                pass
+        rip_path = self._find_rip_path()
 
         if not rip_path:
             GLib.idle_add(self._log,
