@@ -155,9 +155,11 @@ class QripApp:
         self.btn_download  = self.builder.get_object("btn_download")
         self.btn_stop      = self.builder.get_object("btn_stop")
         self.btn_about     = self.builder.get_object("btn_about")
+        self.btn_setup     = self.builder.get_object("btn_setup")
         self.btn_choose    = self.builder.get_object("btn_choose_folder")
         self.btn_open      = self.builder.get_object("btn_open_folder")
         self.btn_log       = self.builder.get_object("btn_open_log")
+        self.cb_clear_cache = self.builder.get_object("cb_clear_cache")
         self.folder_lbl    = self.builder.get_object("folder_lbl")
         self.status_lbl    = self.builder.get_object("status_lbl")
         self.progress_bar  = self.builder.get_object("progress_bar")
@@ -201,6 +203,8 @@ class QripApp:
         self.btn_open.set_can_focus(True)
         self.btn_log.set_can_focus(True)
         self.btn_about.set_can_focus(True)
+        self.btn_setup.set_can_focus(True)
+        self.cb_clear_cache.set_can_focus(True)
         for cb in self._quality_checks:
             cb.set_can_focus(True)
 
@@ -221,6 +225,7 @@ class QripApp:
         self.btn_download.connect("clicked", self._on_download)
         self.btn_stop.connect("clicked", self._on_stop)
         self.btn_about.connect("clicked", self._show_about)
+        self.btn_setup.connect("clicked", self._show_setup_wizard)
         self.btn_choose.connect("clicked", self._choose_folder)
         self.btn_open.connect("clicked", self._open_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
@@ -231,6 +236,7 @@ class QripApp:
         # ── Afficher ──
         self.window.show_all()
         self.btn_stop.hide()
+        GLib.idle_add(self._first_run_health_check)
 
     # ── Qualité ──────────────────────────────────────────────────────────────
 
@@ -278,6 +284,13 @@ class QripApp:
         url = self.url_entry.get_text().strip()
         if not url:
             self._set_status("⚠   Please paste a URL first.", "error")
+            return
+        ok, issues = self._run_preflight_checks(auto_fix=False)
+        if not ok:
+            self._set_status("❌  Setup issue detected — open Setup.", "error")
+            self._log("❌  Preflight checks failed:\n", "error")
+            for issue in issues:
+                self._log(f"   • {issue}\n", "error")
             return
         os.makedirs(self._dest_folder, exist_ok=True)
         self.btn_download.set_sensitive(False)
@@ -377,12 +390,107 @@ class QripApp:
 
     # ── Lancement streamrip ───────────────────────────────────────────────────
 
+    def _find_rip_path(self):
+        for candidate in [
+            os.path.expanduser("~/.local/bin/rip"),
+            "/usr/local/bin/rip",
+            "/usr/bin/rip",
+        ]:
+            if os.path.isfile(candidate):
+                return candidate
+        try:
+            result = subprocess.run(["which", "rip"], capture_output=True, text=True)
+            if result.returncode == 0:
+                found = result.stdout.strip()
+                if found:
+                    return found
+        except Exception:
+            pass
+        return None
+
+    def _check_dest_writable(self):
+        try:
+            os.makedirs(self._dest_folder, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=self._dest_folder, delete=True):
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _run_preflight_checks(self, auto_fix=False):
+        issues = []
+        rip_path = self._find_rip_path()
+        if not rip_path:
+            issues.append("streamrip (rip) is not installed or not in PATH.")
+
+        cfg_path = os.path.join(resolve_config_dir(), "config.toml")
+        if not os.path.exists(cfg_path):
+            if auto_fix and rip_path:
+                try:
+                    result = subprocess.run([rip_path, "config", "reset"], capture_output=True, text=True)
+                    if result.returncode != 0:
+                        issues.append("Unable to generate streamrip config automatically.")
+                except Exception:
+                    issues.append("Unable to run `rip config reset` automatically.")
+            if not os.path.exists(cfg_path):
+                issues.append("streamrip config.toml is missing (run: rip config reset).")
+
+        if not self._check_dest_writable():
+            issues.append(f"Destination is not writable: {self._dest_folder}")
+
+        return (len(issues) == 0, issues)
+
+    def _first_run_health_check(self):
+        ok, issues = self._run_preflight_checks(auto_fix=False)
+        if ok:
+            self._set_status("✅  Setup check passed — ready.", "ok")
+        else:
+            self._set_status("⚠  Setup incomplete — click Setup.", "error")
+            self._log("⚠  Startup checks found issues:\n", "info")
+            for issue in issues:
+                self._log(f"   • {issue}\n", "info")
+        return False
+
+    def _show_setup_wizard(self, *_):
+        ok, issues = self._run_preflight_checks(auto_fix=False)
+        if ok:
+            body = "Everything looks good.\n\nYou can start downloads safely."
+            status = "✅ Setup OK"
+        else:
+            body = "Issues detected:\n- " + "\n- ".join(issues)
+            status = "⚠ Setup needs attention"
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.INFO if ok else Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text=status,
+        )
+        dlg.format_secondary_text(body)
+        if not ok:
+            dlg.add_button("Auto-fix", 1)
+        dlg.add_button("Close", Gtk.ResponseType.CLOSE)
+        response = dlg.run()
+        dlg.destroy()
+
+        if response == 1:
+            fixed_ok, fixed_issues = self._run_preflight_checks(auto_fix=True)
+            if fixed_ok:
+                self._set_status("✅  Setup auto-fix completed.", "ok")
+                self._log("✅  Setup auto-fix completed successfully.\n", "ok")
+            else:
+                self._set_status("❌  Setup still incomplete.", "error")
+                self._log("❌  Setup auto-fix could not solve all issues:\n", "error")
+                for issue in fixed_issues:
+                    self._log(f"   • {issue}\n", "error")
+
     def _run_download(self, url, quality):
         cfg_path = os.path.join(resolve_config_dir(), "config.toml")
         cfg = os.path.expanduser(cfg_path)
         db  = os.path.expanduser("~/.config/streamrip/downloads.db")
 
-        if os.path.exists(db):
+        if self.cb_clear_cache.get_active() and os.path.exists(db):
             try:
                 os.remove(db)
                 GLib.idle_add(self._log, "🧹  Cache cleared.\n", "info")
@@ -399,23 +507,7 @@ class QripApp:
         GLib.idle_add(self._log, f"🎵  Quality : {quality} | Dest : {self._dest_folder}\n", "info")
         GLib.idle_add(self._log, "─" * 60 + "\n", "dim")
 
-        rip_path = None
-        for candidate in [
-            os.path.expanduser("~/.local/bin/rip"),
-            "/usr/local/bin/rip",
-            "/usr/bin/rip",
-        ]:
-            if os.path.isfile(candidate):
-                rip_path = candidate
-                break
-
-        if not rip_path:
-            try:
-                result = subprocess.run(["which", "rip"], capture_output=True, text=True)
-                if result.returncode == 0:
-                    rip_path = result.stdout.strip()
-            except Exception:
-                pass
+        rip_path = self._find_rip_path()
 
         if not rip_path:
             GLib.idle_add(self._log,

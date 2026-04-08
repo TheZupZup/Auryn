@@ -93,6 +93,22 @@
               </packing>
             </child>
             <child>
+              <object class="GtkButton" id="btn_setup">
+                <property name="label">Setup</property>
+                <property name="can-focus">False</property>
+                <property name="receives-default">False</property>
+                <style>
+                  <class name="neutral-btn"/>
+                </style>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="pack-type">end</property>
+                <property name="position">6</property>
+              </packing>
+            </child>
+            <child>
               <object class="GtkButton" id="btn_about">
                 <property name="label"> i </property>
                 <property name="can-focus">False</property>
@@ -105,7 +121,7 @@
                 <property name="expand">False</property>
                 <property name="fill">False</property>
                 <property name="pack-type">end</property>
-                <property name="position">6</property>
+                <property name="position">7</property>
               </packing>
             </child>
           </object>
@@ -300,6 +316,20 @@
                   </packing>
                 </child>
                 <child>
+                  <object class="GtkCheckButton" id="cb_clear_cache">
+                    <property name="label">Clear streamrip cache before download</property>
+                    <property name="can-focus">False</property>
+                    <property name="receives-default">False</property>
+                    <property name="active">True</property>
+                    <property name="draw-indicator">True</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                    <property name="position">4</property>
+                  </packing>
+                </child>
+                <child>
                   <object class="GtkBox" id="btn_row">
                     <property name="can-focus">False</property>
                     <property name="spacing">8</property>
@@ -333,7 +363,7 @@
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">False</property>
-                    <property name="position">4</property>
+                    <property name="position">5</property>
                   </packing>
                 </child>
                 <child>
@@ -347,7 +377,7 @@
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">False</property>
-                    <property name="position">5</property>
+                    <property name="position">6</property>
                   </packing>
                 </child>
                 <child>
@@ -357,7 +387,7 @@
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">False</property>
-                    <property name="position">6</property>
+                    <property name="position">7</property>
                   </packing>
                 </child>
                 <child>
