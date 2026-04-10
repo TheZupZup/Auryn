@@ -2,9 +2,10 @@
 [![Download](https://img.shields.io/badge/Download-.deb-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
 ![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)
-![License](https://img.shields.io/github/license/TheZupZup/Auryn)
-![Stars](https://img.shields.io/github/stars/TheZupZup/Auryn?style=social)
-![Issues](https://img.shields.io/github/issues/TheZupZup/Auryn)
+[![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml)
+[![License](https://img.shields.io/github/license/TheZupZup/Auryn)](https://github.com/TheZupZup/Auryn/blob/main/LICENSE)
+[![Stars](https://img.shields.io/github/stars/TheZupZup/Auryn?style=social)](https://github.com/TheZupZup/Auryn/stargazers)
+[![Issues](https://img.shields.io/github/issues/TheZupZup/Auryn)](https://github.com/TheZupZup/Auryn/issues)
 
 Auryn is a graphical interface for an existing open-source tool. It does not provide, host, or distribute any content.
 
