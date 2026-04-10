@@ -1,0 +1,63 @@
+name: Auryn CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi \
+            python3-gi-cairo \
+            gir1.2-gtk-3.0 \
+            xvfb
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Check Python syntax
+        run: |
+          python -m py_compile Qrip.py
+
+      - name: Smoke test import
+        run: |
+          xvfb-run -a python - <<'PY'
+          import os
+          import importlib.util
+
+          target = "Qrip.py"
+          if not os.path.exists(target):
+              raise SystemExit("Qrip.py not found")
+
+          spec = importlib.util.spec_from_file_location("qrip_main", target)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          print("Import OK")
+          PY
