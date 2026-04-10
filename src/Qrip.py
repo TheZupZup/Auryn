@@ -41,7 +41,7 @@ checkbutton label:hover { color: #FF6B35; }
 #btn_stop:hover { background-color: #e74c3c; }
 #log_view { background-color: #080808; color: #bbbbbb; font-family: 'Ubuntu Mono', 'Courier New', monospace; font-size: 11px; padding: 8px; }
 #log_scroll { border: 1px solid #252525; border-radius: 3px; }
-#lyrics_label { font-family: 'Ubuntu', sans-serif; line-height: 1.6; }
+#lyrics_label { font-family: 'Ubuntu', sans-serif; padding: 4px; }
 notebook { background-color: #0d0d0d; border: 1px solid #252525; border-radius: 3px; }
 notebook stack { background-color: #0d0d0d; padding: 10px; }
 notebook tab { background-color: #111111; color: #888; border: none; padding: 4px 12px; }
