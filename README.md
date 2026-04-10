@@ -2,7 +2,6 @@
 [![Download](https://img.shields.io/badge/Download-.deb-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
 ![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)
-![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)
 ![License](https://img.shields.io/github/license/TheZupZup/Auryn)
 ![Stars](https://img.shields.io/github/stars/TheZupZup/Auryn?style=social)
 ![Issues](https://img.shields.io/github/issues/TheZupZup/Auryn)
