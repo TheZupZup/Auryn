@@ -489,6 +489,65 @@ class QripApp:
                 for issue in fixed_issues:
                     self._log(f"   • {issue}\n", "error")
 
+    def _update_config(self, cfg, pattern, replacement, first_only=False):
+        if not os.path.exists(cfg):
+            return
+        try:
+            with open(cfg, 'r') as f:
+                content = f.read()
+            
+            if first_only:
+                new_content = re.sub(pattern, replacement, content, count=1, flags=re.MULTILINE)
+            else:
+                new_content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+            
+            with open(cfg, 'w') as f:
+                f.write(new_content)
+        except Exception as e:
+            GLib.idle_add(self._log, f"⚠  Config update error: {e}\n", "error")
+
+    def _apply_stored_credentials(self, cfg):
+        acc_path = os.path.expanduser("~/.config/qrip/accounts.json")
+        if not os.path.exists(acc_path):
+            return
+
+        try:
+            with open(acc_path, 'r') as f:
+                acc = json.load(f)
+        except Exception as e:
+            GLib.idle_add(self._log, f"⚠  Could not read accounts.json: {e}\n", "error")
+            return
+
+        GLib.idle_add(self._log, "🔐  Applying stored credentials...\n", "info")
+        
+        # Qobuz
+        if "qobuz" in acc:
+            q = acc["qobuz"]
+            if q.get("email"):
+                self._update_config(cfg, r"^email = .*", f'email = "{toml_escape(q["email"])}"')
+            if q.get("password"):
+                self._update_config(cfg, r"^password = .*", f'password = "{toml_escape(q["password"])}"')
+        
+        # Tidal
+        if "tidal" in acc:
+            t = acc["tidal"]
+            if t.get("user_id"):
+                 self._update_config(cfg, r"^user_id = .*", f'user_id = "{toml_escape(t["user_id"])}"')
+            if t.get("token"):
+                 self._update_config(cfg, r"^token = .*", f'token = "{toml_escape(t["token"])}"')
+
+        # Deezer
+        if "deezer" in acc:
+            d = acc["deezer"]
+            if d.get("arl"):
+                 self._update_config(cfg, r"^arl = .*", f'arl = "{toml_escape(d["arl"])}"')
+
+        # SoundCloud
+        if "soundcloud" in acc:
+            s = acc["soundcloud"]
+            if s.get("oauth_token"):
+                 self._update_config(cfg, r"^oauth_token = .*", f'oauth_token = "{toml_escape(s["oauth_token"])}"')
+
     def _run_download(self, url, quality):
         cfg_path = os.path.join(resolve_config_dir(), "config.toml")
         cfg = os.path.expanduser(cfg_path)
@@ -502,11 +561,11 @@ class QripApp:
                 pass
 
         if os.path.exists(cfg):
+            self._apply_stored_credentials(cfg)
             safe_folder = toml_escape(self._dest_folder)
-            subprocess.run(["sed", "-i", f"s/^quality = .*/quality = {quality}/", cfg], check=False)
-            subprocess.run(["sed", "-i", "s/use_auth_token = .*/use_auth_token = true/", cfg], check=False)
-            subprocess.run(["sed", "-i",
-                f'0,/^folder = .*/s||folder = "{safe_folder}"|', cfg], check=False)
+            self._update_config(cfg, r"^quality = .*", f"quality = {quality}")
+            self._update_config(cfg, r"^use_auth_token = .*", "use_auth_token = true")
+            self._update_config(cfg, r"^folder = .*", f'folder = "{safe_folder}"', first_only=True)
 
         GLib.idle_add(self._log, f"🌐  URL     : {url}\n", "info")
         GLib.idle_add(self._log, f"🎵  Quality : {quality} | Dest : {self._dest_folder}\n", "info")

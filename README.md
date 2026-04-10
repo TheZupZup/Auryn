@@ -79,19 +79,57 @@ sudo dpkg -i qrip.deb
 
 ## Docker (Advanced / NAS / Server)
 
-Available on Docker Hub:
-https://hub.docker.com/r/thezupzup/qrip
+Auryn is available as a Docker image for advanced users, NAS environments, or server setups.
+
+**Docker Hub:** [thezupzup/qrip](https://hub.docker.com/r/thezupzup/qrip)
+
+### Prerequisites
+
+Since Auryn is a GUI application, you need to allow the container to access your X11 display server:
 
 ```bash
-docker pull thezupzup/qrip
-
 xhost +local:docker
-
-docker run -e DISPLAY=$DISPLAY \
--v /tmp/.X11-unix:/tmp/.X11-unix \
--v $(pwd)/downloads:/root/Music \
-thezupzup/qrip
 ```
+
+### Option 1: Docker Run
+
+You can start the container with a single command:
+
+```bash
+docker run -d \
+  --name auryn \
+  -e DISPLAY=$DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v $(pwd)/downloads:/root/Music \
+  thezupzup/qrip
+```
+
+**Parameters Explained:**
+- `-e DISPLAY=$DISPLAY`: Passes your host's display environment variable to the container.
+- `-v /tmp/.X11-unix:/tmp/.X11-unix`: Mounts the X11 socket for GUI rendering.
+- `-v $(pwd)/downloads:/root/Music`: Maps your local downloads folder to the container's output directory.
+
+### Option 2: Docker Compose (Recommended)
+
+For a more manageable setup, use a `docker-compose.yml` file:
+
+```yaml
+services:
+  auryn:
+    image: thezupzup/qrip
+    container_name: auryn
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./downloads:/root/Music
+    network_mode: host
+    restart: unless-stopped
+```
+
+**To run with Docker Compose:**
+1. Create a `docker-compose.yml` file with the content above.
+2. Run `docker-compose up -d`.
 ---
 
 ## Project Status
