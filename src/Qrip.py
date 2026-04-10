@@ -41,6 +41,11 @@ checkbutton label:hover { color: #FF6B35; }
 #btn_stop:hover { background-color: #e74c3c; }
 #log_view { background-color: #080808; color: #bbbbbb; font-family: 'Ubuntu Mono', 'Courier New', monospace; font-size: 11px; padding: 8px; }
 #log_scroll { border: 1px solid #252525; border-radius: 3px; }
+#lyrics_label { font-family: 'Ubuntu', sans-serif; line-height: 1.6; }
+notebook { background-color: #0d0d0d; border: 1px solid #252525; border-radius: 3px; }
+notebook stack { background-color: #0d0d0d; padding: 10px; }
+notebook tab { background-color: #111111; color: #888; border: none; padding: 4px 12px; }
+notebook tab:checked { background-color: #FF6B35; color: #ffffff; font-weight: bold; }
 progressbar trough { background-color: #0d0d0d; border: 1px solid #252525; border-radius: 3px; min-height: 4px; }
 progressbar progress { background-color: #FF6B35; border-radius: 3px; min-height: 4px; }
 #footer_bar { background-color: #0a0a0a; border-top: 1px solid #222; padding: 3px 12px; min-height: 22px; }
@@ -173,6 +178,8 @@ class QripApp:
         self.footer_lbl    = self.builder.get_object("footer_lbl")
         self.speed_lbl     = self.builder.get_object("speed_lbl")
         self._scroll       = self.builder.get_object("log_scroll")
+        self.notebook      = self.builder.get_object("notebook")
+        self.lyrics_label  = self.builder.get_object("lyrics_label")
 
         # ── Checkbuttons qualité ──
         self._quality_checks = [
@@ -306,6 +313,7 @@ class QripApp:
         self._track_done   = 0
         self._total_tracks = 0
         self._set_status("⏳   Fetching album info...", "info")
+        self._set_lyrics('<span foreground="#444444"><i>Lyrics will appear here during download...</i></span>')
         quality = self._get_quality()
         threading.Thread(target=self._thread_main, args=(url, quality), daemon=True).start()
 
@@ -330,6 +338,11 @@ class QripApp:
             data = fetch_deezer_track_album(item_id)
             if data and not data.get("error"):
                 GLib.idle_add(self._apply_deezer_meta, data)
+                # For single track, fetch lyrics immediately
+                artist = data.get("artist", {}).get("name")
+                title = data.get("title")
+                if artist and title:
+                    threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, title), daemon=True).start()
         self._run_download(url, quality)
 
     # ── Métadonnées ───────────────────────────────────────────────────────────
@@ -706,6 +719,14 @@ class QripApp:
                 self._total_tracks = count
             sm("Total Tracks", str(count))
 
+        m = re.search(r'Downloading track\s+[\'"]?(.+?)[\'"]?(?:\s+track\.py|\s*$)', line, re.I)
+        if m:
+            track_name = m.group(1).strip()
+            self._set_status(f"🎵  {track_name[:80]}", "track")
+            artist = self._meta["Album Artist"].get_text()
+            if artist != "—" and artist:
+                threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, track_name), daemon=True).start()
+
         m = re.search(r'Release\s+date[:\s]+(\d{4}[-/]\d{2}[-/]\d{2})', line, re.I)
         if m: sm("Release Date", m.group(1))
 
@@ -760,6 +781,7 @@ class QripApp:
     def _reset_meta(self):
         for lbl in self._meta.values():
             lbl.set_markup('<span foreground="#333333" size="small">—</span>')
+        self._set_lyrics('<span foreground="#333333" size="small">—</span>')
         self._set_placeholder_cover()
         self.speed_lbl.set_markup("")
 
@@ -778,6 +800,37 @@ class QripApp:
         dlg.set_license_type(Gtk.License.GPL_3_0)
         dlg.run()
         dlg.destroy()
+
+    # ── Lyrics Logic ─────────────────────────────────────────────────────────
+
+    def _fetch_and_apply_lyrics(self, artist, track):
+        try:
+            q_artist = urllib.parse.quote(artist)
+            q_track = urllib.parse.quote(track)
+            url = f"https://lrclib.net/api/get?artist_name={q_artist}&track_name={q_track}"
+            
+            req = urllib.request.Request(url, headers={"User-Agent": "Auryn/0.1.1 (GTK3)"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read().decode())
+                
+            lyrics = data.get("syncedLyrics") or data.get("plainLyrics")
+            if lyrics:
+                # Nettoyage et échappement
+                safe_track = track.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                safe_lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                clean_lyrics = re.sub(r'\[\d+:\d+\.\d+\]', '', safe_lyrics).strip()
+                markup = f'<span foreground="#FF6B35" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
+                GLib.idle_add(self.lyrics_label.set_markup, markup)
+            else:
+                track_esc = track.replace("&", "&amp;").replace("<", "&lt;")
+                GLib.idle_add(self.lyrics_label.set_markup, f'<span foreground="#555555"><i>Lyrics not found for: {track_esc}</i></span>')
+        except Exception as e:
+            err_esc = str(e).replace("&", "&amp;").replace("<", "&lt;")
+            GLib.idle_add(self.lyrics_label.set_markup, f'<span foreground="#e74c3c"><i>Error fetching lyrics: {err_esc}</i></span>')
+
+    def _set_lyrics(self, text):
+        # Cette méthode attend du markup déjà prêt ou du texte simple
+        self.lyrics_label.set_markup(text)
 
     def _on_quit(self, *_):
         if self._process and self._process.poll() is None:

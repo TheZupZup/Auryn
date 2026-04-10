@@ -391,23 +391,80 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkScrolledWindow" id="log_scroll">
-                    <property name="name">log_scroll</property>
-                    <property name="can-focus">False</property>
+                  <object class="GtkNotebook" id="notebook">
+                    <property name="visible">True</property>
+                    <property name="can-focus">True</property>
                     <child>
-                      <object class="GtkTextView" id="log_view">
-                        <property name="name">log_view</property>
+                      <object class="GtkScrolledWindow" id="log_scroll">
+                        <property name="name">log_scroll</property>
+                        <property name="visible">True</property>
                         <property name="can-focus">False</property>
-                        <property name="editable">False</property>
-                        <property name="wrap-mode">word-char</property>
-                        <property name="cursor-visible">False</property>
+                        <child>
+                          <object class="GtkTextView" id="log_view">
+                            <property name="name">log_view</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="editable">False</property>
+                            <property name="wrap-mode">word-char</property>
+                            <property name="cursor-visible">False</property>
+                          </object>
+                        </child>
                       </object>
+                    </child>
+                    <child type="tab">
+                      <object class="GtkLabel" id="label_tab_log">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="label" translatable="yes">Log</property>
+                      </object>
+                      <packing>
+                        <property name="tab-fill">False</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkScrolledWindow" id="lyrics_scroll">
+                        <property name="name">log_scroll</property>
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="hscrollbar-policy">never</property>
+                        <child>
+                          <object class="GtkLabel" id="lyrics_label">
+                            <property name="name">lyrics_label</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">True</property>
+                            <property name="margin-start">10</property>
+                            <property name="margin-end">10</property>
+                            <property name="margin-top">10</property>
+                            <property name="margin-bottom">10</property>
+                            <property name="label" translatable="yes">&lt;span foreground="#333333" size="small"&gt;—&lt;/span&gt;</property>
+                            <property name="use-markup">True</property>
+                            <property name="wrap">True</property>
+                            <property name="wrap-mode">word-char</property>
+                            <property name="selectable">True</property>
+                            <property name="justify">center</property>
+                          </object>
+                        </child>
+                      </object>
+                      <packing>
+                        <property name="position">1</property>
+                      </packing>
+                    </child>
+                    <child type="tab">
+                      <object class="GtkLabel" id="label_tab_lyrics">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="label" translatable="yes">Lyrics</property>
+                      </object>
+                      <packing>
+                        <property name="position">1</property>
+                        <property name="tab-fill">False</property>
+                      </packing>
                     </child>
                   </object>
                   <packing>
                     <property name="expand">True</property>
                     <property name="fill">True</property>
-                    <property name="position">7</property>
+                    <property name="position">8</property>
                   </packing>
                 </child>
               </object>
