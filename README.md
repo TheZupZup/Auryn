@@ -3,7 +3,6 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
 [![Python](https://img.shields.io/badge/python-3.x-blue?logo=python)](#)
 ![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)
-![License](https://img.shields.io/github/license/TheZupZup/Auryn)
 ![Stars](https://img.shields.io/github/stars/TheZupZup/Auryn?style=social)
 ![Issues](https://img.shields.io/github/issues/TheZupZup/Auryn)
 
