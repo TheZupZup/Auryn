@@ -3,8 +3,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
 [![Python](https://img.shields.io/badge/python-3.x-blue?logo=python)](#)
 ![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)
-![Stars](https://img.shields.io/github/stars/TheZupZup/Auryn?style=social)
-![Issues](https://img.shields.io/github/issues/TheZupZup/Auryn)
+
 
 Auryn is a graphical interface for an existing open-source tool. It does not provide, host, or distribute any content.
 
