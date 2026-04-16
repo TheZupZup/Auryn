@@ -20,7 +20,7 @@ Auryn is a graphical interface for an existing open-source tool. It does not pro
 </p>
 
 ## Announcement
-- Auryn has been rebranded to Auryn (in progress)
+- Auryn has been rebranded to Auryn
 - .deb package available in Releases
 - Flatpak support in progress
 
