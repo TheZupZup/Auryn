@@ -5,20 +5,34 @@ Qrip v0.1.1 — GUI wrapper for streamrip
 UI chargée depuis Qrip.ui (Glade)
 """
 
-import gi
+
 import os
 import re
-import pty
-import fcntl
 import threading
 import subprocess
 import urllib.request
 import json
 import tempfile
+import platform
 
-gi.require_version('Gtk', '3.0')
-gi.require_version('Gdk', '3.0')
-from gi.repository import Gtk, GLib, Gdk, GdkPixbuf, Pango
+SYSTEM_NAME = platform.system()
+IS_WINDOWS = SYSTEM_NAME == "Windows"
+IS_MACOS = SYSTEM_NAME == "Darwin"
+IS_UNSUPPORTED_OS = IS_WINDOWS or IS_MACOS
+
+gi = None
+pty = None
+fcntl = None 
+
+if not IS_UNSUPPORTED_OS:
+    import gi
+    import pty
+    import fcntl
+    
+    gi.require_version('Gtk', '3.0')
+    gi.require_version('Gdk', '3.0')
+    from gi.repository import Gtk, GLib, Gdk, GdkPixbuf, Pango
+
 
 CSS = b"""
 * { font-family: 'Ubuntu', 'Cantarell', sans-serif; }
@@ -839,5 +853,9 @@ class QripApp:
 
 
 if __name__ == "__main__":
+    if IS_UNSUPPORTED_OS:
+        print("Auryn is not supported on Windows or macOS yet. Please use Linux for now.")
+        raise SystemExit(1)
+
     app = QripApp()
     Gtk.main()
