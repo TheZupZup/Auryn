@@ -164,7 +164,7 @@ class AurynApp:
         Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
 
         # ── Charger le fichier .ui ──
-        ui_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ")
+        ui_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Auryn.ui")
         if not os.path.exists(ui_file):
             # Fallback: même dossier que le script
             ui_file = os.path.join(os.path.dirname(__file__), "Auryn.ui")
