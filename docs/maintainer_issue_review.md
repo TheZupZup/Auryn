@@ -3,24 +3,24 @@
 ## Step 1 — Code analysis
 
 ### Existing modules and features
-- **GTK3 desktop application (`src/Qrip.py` + `src/Qrip.ui`)**: URL input, quality selection, destination folder chooser, setup dialog, log view, metadata panel, and lyrics tab are wired and functional.
+- **GTK3 desktop application (`src/Auryn.py` + `src/Auryn.ui`)**: URL input, quality selection, destination folder chooser, setup dialog, log view, metadata panel, and lyrics tab are wired and functional.
 - **Download orchestration through `streamrip` CLI**: the app resolves `rip`, runs `rip url <url>` in a PTY, parses live output, updates progress, and supports stop/terminate.
 - **Service-specific metadata fetchers**:
   - Qobuz album lookup (`fetch_qobuz_meta`)
   - Deezer album lookup (`fetch_deezer_album`) and track→album bridge (`fetch_deezer_track_album`)
   - Cover art retrieval and scaling
 - **Preflight/setup checks**: verifies `rip` availability, presence of `~/.config/streamrip/config.toml`, and destination writability.
-- **Credential application flow**: reads `~/.config/qrip/accounts.json` and writes relevant values into streamrip TOML via regex replacements.
+- **Credential application flow**: reads `~/.config/Auryn/accounts.json` and writes relevant values into streamrip TOML via regex replacements.
 - **Basic CI**: linting and tests job exists, but tests are allowed to fail (`pytest || true`).
 
 ### Incomplete or fragile parts
 - **No automated tests for runtime behavior**: project has no test files; CI is mostly syntactic confidence.
 - **Fragile config editing**: `_update_config` uses regex replacement against TOML text; missing keys/section context can silently skip updates.
-- **Secrets handling risk**: plaintext credentials in `~/.config/qrip/accounts.json`; no permission hardening or warning UX.
+- **Secrets handling risk**: plaintext credentials in `~/.config/Auryn/accounts.json`; no permission hardening or warning UX.
 - **Service support messaging vs runtime reality**:
   - URL detector recognizes tidal/soundcloud URLs, but metadata fetch is only implemented for qobuz/deezer.
   - README claims “does not directly interact with any online services”, but app performs multiple direct API calls (Qobuz, Deezer, lrclib).
-- **Rebrand is partial**: repo name/README uses Auryn, while app file names, About dialog, desktop file, and UI title still use Qrip.
+- **Rebrand is partial**: repo name/README uses Auryn, while app file names, About dialog, desktop file, and UI title still use Auryn.
 - **No packaging sources in repo for claims**: README references `.deb`/Docker/Flatpak status but repository contains no Dockerfile, compose file, or flatpak manifests.
 
 ### Missing components (based on repository contents)
@@ -53,7 +53,7 @@
 **Labels:** `good first issue`
 
 ## Overview
-Core logic in `src/Qrip.py` (URL/service detection and setup checks) has no tests. This creates regression risk when adding providers or changing validation behavior.
+Core logic in `src/Auryn.py` (URL/service detection and setup checks) has no tests. This creates regression risk when adding providers or changing validation behavior.
 
 ## What needs to be done
 - [ ] Create a `tests/` folder and add `test_detect_service_and_id.py`.
@@ -112,7 +112,7 @@ Do not redesign full settings architecture; keep scope limited to current config
 **Labels:** `help wanted`
 
 ## Overview
-Credentials are read from `~/.config/qrip/accounts.json` in plaintext. There is no permission check, warning, or guidance for safer usage.
+Credentials are read from `~/.config/Auryn/accounts.json` in plaintext. There is no permission check, warning, or guidance for safer usage.
 
 ## What needs to be done
 - [ ] Check file permissions before loading credentials and log warning when overly permissive.
@@ -150,10 +150,10 @@ Keep changes documentation-only; no feature work required.
 **Labels:** `good first issue`
 
 ## Overview
-Repository branding is “Auryn”, but runtime strings and file names still show “Qrip” in multiple places.
+Repository branding is “Auryn”, but runtime strings and file names still show “Auryn” in multiple places.
 
 ## What needs to be done
-- [ ] Update window title, About dialog program name/comments/version text, and visible labels from Qrip to Auryn where appropriate.
+- [ ] Update window title, About dialog program name/comments/version text, and visible labels from Auryn to Auryn where appropriate.
 - [ ] Update desktop entry metadata to match.
 - [ ] Verify launch still works with existing file names (or rename in a separate scoped issue).
 

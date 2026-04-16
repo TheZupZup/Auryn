@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Generated with glade 3.40.0 -->
-<!-- Generated for Qrip v0.1.1 — Edit with Glade -->
+<!-- Generated for Auryn v0.1.1 — Edit with Glade -->
 <interface>
   <requires lib="gtk+" version="3.20"/>
   <object class="GtkWindow" id="main_window">
     <property name="can-focus">False</property>
-    <property name="title">Qrip v0.1.1</property>
+    <property name="title">Auryn v0.1.1</property>
     <property name="default-width">920</property>
     <property name="default-height">590</property>
     <child>
@@ -764,7 +764,7 @@
               <object class="GtkLabel" id="footer_lbl">
                 <property name="can-focus">False</property>
                 <property name="halign">start</property>
-                <property name="label">&lt;span foreground="#333333" size="small"&gt;  Qrip v0.1.1 — Ready&lt;/span&gt;</property>
+                <property name="label">&lt;span foreground="#333333" size="small"&gt;  Auryn v0.1.1 — Ready&lt;/span&gt;</property>
                 <property name="use-markup">True</property>
               </object>
               <packing>

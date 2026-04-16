@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qrip
+# Auryn
 # Simple Zenity GUI wrapper for streamrip ("rip")
 
 # -------------------------------------------------------
@@ -21,18 +21,18 @@
 # - streamrip installed as `rip` (recommended via `pipx install streamrip`)
 #
 # Suggested install paths:
-# - ~/.local/bin/Qrip
-# - ~/.local/share/applications/Qrip.desktop
+# - ~/.local/bin/Auryn
+# - ~/.local/share/applications/Auryn.desktop
 # Graphical wrapper for streamrip with auto-organization for NAS
 # Supports: Qobuz, Tidal, Deezer, SoundCloud
 
 set -euo pipefail
 
 # --- Settings & Paths ---
-APP_NAME="Qrip"
-APP_TITLE="Qrip"
+APP_NAME="Auryn"
+APP_TITLE="Auryn"
 APP_VERSION="2.0.0"
-STATE_DIR="${HOME}/.local/state/qrip"
+STATE_DIR="${HOME}/.local/state/Auryn"
 LOG_DIR="${STATE_DIR}/logs"
 CFG_FILE="${HOME}/.config/streamrip/config.toml"
 mkdir -p "$LOG_DIR"
@@ -80,9 +80,9 @@ Q_CHOICE=$(zenity --list --title="$APP_NAME - Quality" \
 [ -z "$Q_CHOICE" ] && exit 0
 
 # --- Process: Download & Organize ---
-STAGING_DIR="/tmp/qrip_staging_$(date +%s)"
+STAGING_DIR="/tmp/Auryn_staging_$(date +%s)"
 mkdir -p "$STAGING_DIR"
-LOG_FILE="${LOG_DIR}/qrip_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="${LOG_DIR}/Auryn_$(date +%Y%m%d_%H%M%S).log"
 
 (
     echo "# Preparing isolated environment..."

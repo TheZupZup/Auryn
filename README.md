@@ -1,6 +1,6 @@
 # Auryn
 [![Download](https://img.shields.io/badge/Download-.deb-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
-[![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/qrip)](https://hub.docker.com/r/thezupzup/qrip)
+[![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/Auryn)](https://hub.docker.com/r/thezupzup/Auryn)
 [![Python](https://img.shields.io/badge/python-3.x-blue?logo=python)](#)
 ![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)
 
@@ -8,11 +8,11 @@
 Auryn is a graphical interface for an existing open-source tool. It does not provide, host, or distribute any content.
 
 <p align="center">
-  <img src="./assets/qrip.svg" width="120">
+  <img src="./assets/Auryn.svg" width="120">
 </p>
 
 <p align="center">
-  <img src="./assets/qrip_ui.png" width="900">
+  <img src="./assets/Auryn_ui.png" width="900">
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@ Auryn is a graphical interface for an existing open-source tool. It does not pro
 </p>
 
 ## Announcement
-- Qrip has been rebranded to Auryn (in progress)
+- Auryn has been rebranded to Auryn (in progress)
 - .deb package available in Releases
 - Flatpak support in progress
 
@@ -61,7 +61,7 @@ Auryn is ideal for:
 ---
 
 ## Workflow
-Input Source → Qrip → Local/NAS Library → Media Server → Playback
+Input Source → Auryn → Local/NAS Library → Media Server → Playback
 
 
 ---
@@ -72,19 +72,19 @@ Tested on Linux Mint / Debian-based systems
 
 Download the `.deb` package from the releases section:
 
-https://codeberg.org/TheZupZup/Qrip/releases
+https://codeberg.org/TheZupZup/Auryn/releases
 
 Then install:
 
 ```bash
-sudo dpkg -i qrip.deb
+sudo dpkg -i Auryn.deb
 ```
 
 ## Docker (Advanced / NAS / Server)
 
 Auryn is available as a Docker image for advanced users, NAS environments, or server setups.
 
-**Docker Hub:** [thezupzup/qrip](https://hub.docker.com/r/thezupzup/qrip)
+**Docker Hub:** [thezupzup/Auryn](https://hub.docker.com/r/thezupzup/Auryn)
 
 ### Prerequisites
 
@@ -104,7 +104,7 @@ docker run -d \
   -e DISPLAY=$DISPLAY \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v $(pwd)/downloads:/root/Music \
-  thezupzup/qrip
+  thezupzup/Auryn
 ```
 
 **Parameters Explained:**
@@ -119,7 +119,7 @@ For a more manageable setup, use a `docker-compose.yml` file:
 ```yaml
 services:
   auryn:
-    image: thezupzup/qrip
+    image: thezupzup/Auryn
     container_name: auryn
     environment:
       - DISPLAY=${DISPLAY}
@@ -164,7 +164,7 @@ This software is intended for legitimate use with content you own or are authori
 
 Users are responsible for ensuring that their use of this tool complies with applicable laws and the terms of service of any platforms they access.
 
-The developer of Qrip does not encourage or support misuse of this software.
+The developer of Auryn does not encourage or support misuse of this software.
 
 ---
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env xdg-open
 [Desktop Entry]
-Name=Qrip
+Name=Auryn
 Comment=Simple GTK GUI wrapper for streamrip
-Exec=qrip
-Icon=qrip
+Exec=Auryn
+Icon=Auryn
 Terminal=false
 Type=Application
 Categories=Audio;Music;

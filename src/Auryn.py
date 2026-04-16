@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Qrip v0.1.1 — GUI wrapper for streamrip
+Auryn v0.1.1 — GUI wrapper for streamrip
 © 2025 TheZupZup — GNU GPL v3
-UI chargée depuis Qrip.ui (Glade)
+UI chargée depuis Auryn.ui (Glade)
 """
 
 
@@ -149,10 +149,10 @@ def toml_escape(value):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  QripApp — charge l'UI depuis Qrip.ui
+#  AurynApp — charge l'UI depuis Auryn.ui
 # ─────────────────────────────────────────────────────────────────────────────
 
-class QripApp:
+class AurynApp:
 
     def __init__(self):
         # ── CSS ──
@@ -164,10 +164,10 @@ class QripApp:
         Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
 
         # ── Charger le fichier .ui ──
-        ui_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Qrip.ui")
+        ui_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ")
         if not os.path.exists(ui_file):
             # Fallback: même dossier que le script
-            ui_file = os.path.join(os.path.dirname(__file__), "Qrip.ui")
+            ui_file = os.path.join(os.path.dirname(__file__), "Auryn.ui")
 
         self.builder = Gtk.Builder()
         self.builder.add_from_file(ui_file)
@@ -299,7 +299,7 @@ class QripApp:
         subprocess.Popen(["xdg-open", self._dest_folder])
 
     def _open_log_folder(self, *_):
-        log_dir = os.path.expanduser("~/.local/state/qrip")
+        log_dir = os.path.expanduser("~/.local/state/Auryn")
         os.makedirs(log_dir, exist_ok=True)
         subprocess.Popen(["xdg-open", log_dir])
 
@@ -534,7 +534,7 @@ class QripApp:
             GLib.idle_add(self._log, f"⚠  Config update error: {e}\n", "error")
 
     def _apply_stored_credentials(self, cfg):
-        acc_path = os.path.expanduser("~/.config/qrip/accounts.json")
+        acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
         if not os.path.exists(acc_path):
             return
 
@@ -807,7 +807,7 @@ class QripApp:
     def _show_about(self, *_):
         dlg = Gtk.AboutDialog()
         dlg.set_transient_for(self.window)
-        dlg.set_program_name("Qrip")
+        dlg.set_program_name("Auryn")
         dlg.set_version("v0.1.1")
         dlg.set_comments("GUI wrapper for streamrip\nQobuz • Deezer • Tidal • SoundCloud")
         dlg.set_copyright("© 2025 TheZupZup")
@@ -857,5 +857,5 @@ if __name__ == "__main__":
         print("Auryn is not supported on Windows or macOS yet. Please use Linux for now.")
         raise SystemExit(1)
 
-    app = QripApp()
+    app = AurynApp()
     Gtk.main()
