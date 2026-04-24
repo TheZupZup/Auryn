@@ -1,21 +1,23 @@
-MIT License
+SOFTWARE LICENSE (NON-COMMERCIAL USE ONLY)
+Copyright (c) 2024 TheZupZup
+1. OWNERSHIP AND RIGHTS
+The Software "Auryn" is the exclusive property of TheZupZup. All intellectual property rights are reserved. By publishing this code, the author does not waive any copyright or ownership rights.
+2. GRANTED PERMISSIONS
+Subject to the conditions below, the author hereby grants you a free license to:
 
-Copyright (c) 2026 TheZupZup
+    View and copy the source code.
+    Modify the source code for personal, private use.
+    Run the software for private, non-profit purposes.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+3. STRICT RESTRICTIONS (PROTECTION AGAINST RESALE)
+This license STRICTLY PROHIBITS the following activities without prior written permission from the author:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+    Resale: You may not sell this software or any modified versions of it.
+    SaaS / Cloud: You may not offer this software as a paid service (Software as a Service) or host it for commercial gain.
+    Commercial Use: You may not use this software for any activity that generates revenue, profit, or for the benefit of a commercial entity.
+    Commercial Redistribution: You may not include this software in any paid product or bundle.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+4. ATTRIBUTION
+Any copy or modification of the software must include the original copyright notice and this full license text.
+5. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
