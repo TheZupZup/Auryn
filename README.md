@@ -1,3 +1,17 @@
+## 🛡️ License & Commercial Use
+Auryn is a project created and owned by TheZupZup.
+To protect the hard work put into this project and ensure it remains accessible to everyone, it is published under a Custom Non-Commercial License:
+
+    Individuals: You are free to use, modify, and explore the code for personal and non-profit projects.
+    Companies & Resellers: Any commercial use, reselling, or hosting Nova as a service (SaaS) is strictly prohibited without prior written authorization.
+
+If you are interested in using Auryn for your business or want to discuss a commercial license, please contact me directly:
+📩 [Contact me for Commercial Licensing](mailto:copyright.crewmate858@passmail.net)
+
+
+
+
+
 # Auryn
 [![Download](https://img.shields.io/badge/Download-.deb-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/Auryn)](https://hub.docker.com/r/thezupzup/Auryn)
