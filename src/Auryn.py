@@ -14,6 +14,11 @@ import urllib.request
 import json
 import tempfile
 import platform
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.errors import parse_streamrip_error
+from core.status import build_status_markup
 
 SYSTEM_NAME = platform.system()
 IS_WINDOWS = SYSTEM_NAME == "Windows"
@@ -147,42 +152,6 @@ def resolve_config_dir():
 def toml_escape(value):
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
-
-def parse_streamrip_error(output: str):
-    """Return a user-friendly message if output matches a known streamrip error, else None."""
-    lo = output.lower()
-
-    if any(p in lo for p in [
-        "authenticationerror", "authentication failed", "authentication error",
-        "login failed", "invalid credentials", "incorrect password",
-        "invalid email", "wrong password", "unauthorized",
-        "could not authenticate", "not authenticated",
-    ]):
-        return "❌  Authentication failed — check your credentials in accounts.json."
-
-    if any(p in lo for p in ["invalid arl", "arl expired", "arl is invalid", "bad arl"]):
-        return "❌  Deezer ARL token is invalid or expired — update it in accounts.json."
-
-    if any(p in lo for p in [
-        "invalid token", "token expired", "token is invalid", "token has expired",
-    ]):
-        return "❌  Access token is invalid or expired — re-authenticate your account."
-
-    if any(p in lo for p in [
-        "track not found", "album not found", "resource not found",
-        "resourcenotfounderror", "not available in your region", "does not exist",
-    ]):
-        return "❌  Content not found — the track or album may be unavailable."
-
-    if any(p in lo for p in [
-        "connectionerror", "connection refused", "network error",
-        "sslerror", "ssl error", "name or service not known",
-        "nodename nor servname provided", "errno 111", "errno 110",
-        "timed out", "read timeout", "connection timed out",
-    ]):
-        return "❌  Network error — check your internet connection and try again."
-
-    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -843,10 +812,7 @@ class AurynApp:
         self.log_view.get_buffer().set_text("")
 
     def _set_status(self, text, style="info"):
-        colors = {"ok":"#87a556","error":"#e74c3c","track":"#FF6B35","info":"#555555"}
-        color = colors.get(style, "#555555")
-        safe = text.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-        self.status_lbl.set_markup(f'<span foreground="{color}" size="small">{safe}</span>')
+        self.status_lbl.set_markup(build_status_markup(text, style))
 
     def _reset_meta(self):
         for lbl in self._meta.values():
