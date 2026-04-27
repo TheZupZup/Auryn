@@ -901,7 +901,7 @@ class AurynApp:
         separator()
 
         section("Tidal")
-        field("Token", "not yet supported", sensitive=False)
+        field("Token", "paste your token here")
 
         content.pack_start(grid, True, True, 0)
         dlg.show_all()
