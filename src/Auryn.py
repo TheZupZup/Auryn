@@ -866,7 +866,7 @@ class AurynApp:
             grid.attach(lbl, 0, _row[0], 2, 1)
             _row[0] += 1
 
-        def field(label_text, placeholder="", secret=False, sensitive=True):
+        def field(label_text, placeholder="", secret=False):
             lbl = Gtk.Label()
             lbl.set_markup(f'<span foreground="#888888" size="small">{label_text}</span>')
             lbl.set_halign(Gtk.Align.END)
@@ -875,10 +875,22 @@ class AurynApp:
             entry.set_placeholder_text(placeholder)
             entry.set_hexpand(True)
             entry.set_visibility(not secret)
-            entry.set_sensitive(sensitive)
             entry.get_style_context().add_class("cred-entry")
-            grid.attach(lbl,   0, _row[0], 1, 1)
-            grid.attach(entry, 1, _row[0], 1, 1)
+            grid.attach(lbl, 0, _row[0], 1, 1)
+            if secret:
+                box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                box.pack_start(entry, True, True, 0)
+                toggle = Gtk.Button(label="Show")
+                toggle.get_style_context().add_class("neutral-btn")
+                def on_toggle(btn, e=entry):
+                    visible = not e.get_visibility()
+                    e.set_visibility(visible)
+                    btn.set_label("Hide" if visible else "Show")
+                toggle.connect("clicked", on_toggle)
+                box.pack_start(toggle, False, False, 0)
+                grid.attach(box, 1, _row[0], 1, 1)
+            else:
+                grid.attach(entry, 1, _row[0], 1, 1)
             _row[0] += 1
             return entry
 
@@ -889,19 +901,35 @@ class AurynApp:
             grid.attach(sep, 0, _row[0], 2, 1)
             _row[0] += 1
 
+        acc = {}
+        acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
+        if os.path.exists(acc_path):
+            try:
+                with open(acc_path, 'r') as f:
+                    acc = json.load(f)
+            except Exception:
+                pass
+
         section("Qobuz")
-        field("Email",    "your@email.com")
-        field("Password", "••••••••", secret=True)
+        qobuz_email = field("Email",    "your@email.com")
+        qobuz_pass  = field("Password", "••••••••", secret=True)
+        if "qobuz" in acc:
+            qobuz_email.set_text(acc["qobuz"].get("email", ""))
+            qobuz_pass.set_text(acc["qobuz"].get("password", ""))
 
         separator()
 
         section("Deezer")
-        field("ARL Token", "paste your ARL here")
+        deezer_arl = field("ARL Token", "paste your ARL here", secret=True)
+        if "deezer" in acc:
+            deezer_arl.set_text(acc["deezer"].get("arl", ""))
 
         separator()
 
         section("Tidal")
-        field("Token", "paste your token here")
+        tidal_token = field("Token", "paste your token here", secret=True)
+        if "tidal" in acc:
+            tidal_token.set_text(acc["tidal"].get("token", ""))
 
         content.pack_start(grid, True, True, 0)
         dlg.show_all()
