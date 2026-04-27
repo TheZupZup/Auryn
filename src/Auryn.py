@@ -14,6 +14,11 @@ import urllib.request
 import json
 import tempfile
 import platform
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.errors import parse_streamrip_error
+from core.status import build_status_markup
 
 SYSTEM_NAME = platform.system()
 IS_WINDOWS = SYSTEM_NAME == "Windows"
@@ -41,6 +46,8 @@ window { background-color: #1a1a1a; color: #e8e8e8; }
 #right_panel { background-color: #111111; border-left: 1px solid #252525; padding: 10px; min-width: 200px; }
 #url_entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 3px; padding: 6px 10px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; }
 #url_entry:focus { border-color: #FF6B35; }
+.cred-entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 3px; padding: 6px 10px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; }
+.cred-entry:focus { border-color: #FF6B35; }
 #quality_box { background-color: #111111; border: 1px solid #252525; border-radius: 3px; padding: 5px 12px; }
 checkbutton { color: #aaaaaa; font-size: 12px; }
 checkbutton check { background-color: #0d0d0d; border-color: #444; border-radius: 2px; min-width: 14px; min-height: 14px; }
@@ -148,6 +155,7 @@ def toml_escape(value):
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  AurynApp — charge l'UI depuis Auryn.ui
 # ─────────────────────────────────────────────────────────────────────────────
@@ -178,7 +186,8 @@ class AurynApp:
         self.btn_download  = self.builder.get_object("btn_download")
         self.btn_stop      = self.builder.get_object("btn_stop")
         self.btn_about     = self.builder.get_object("btn_about")
-        self.btn_setup     = self.builder.get_object("btn_setup")
+        self.btn_setup       = self.builder.get_object("btn_setup")
+        self.btn_credentials = self.builder.get_object("btn_credentials")
         self.btn_choose    = self.builder.get_object("btn_choose_folder")
         self.btn_open      = self.builder.get_object("btn_open_folder")
         self.btn_log       = self.builder.get_object("btn_open_log")
@@ -215,10 +224,11 @@ class AurynApp:
         }
 
         # ── État interne ──
-        self._process      = None
-        self._dest_folder  = os.path.expanduser("~/Music")
-        self._track_done   = 0
-        self._total_tracks = 0
+        self._process          = None
+        self._dest_folder      = os.path.expanduser("~/Music")
+        self._track_done       = 0
+        self._total_tracks     = 0
+        self._last_known_error = None
 
         # ── Forcer can-focus sur les widgets interactifs ──
         self.url_entry.set_can_focus(True)
@@ -229,6 +239,7 @@ class AurynApp:
         self.btn_log.set_can_focus(True)
         self.btn_about.set_can_focus(True)
         self.btn_setup.set_can_focus(True)
+        self.btn_credentials.set_can_focus(True)
         self.cb_clear_cache.set_can_focus(True)
         for cb in self._quality_checks:
             cb.set_can_focus(True)
@@ -251,6 +262,7 @@ class AurynApp:
         self.btn_stop.connect("clicked", self._on_stop)
         self.btn_about.connect("clicked", self._show_about)
         self.btn_setup.connect("clicked", self._show_setup_wizard)
+        self.btn_credentials.connect("clicked", self._show_credentials_dialog)
         self.btn_choose.connect("clicked", self._choose_folder)
         self.btn_open.connect("clicked", self._open_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
@@ -324,8 +336,9 @@ class AurynApp:
         self.progress_bar.set_fraction(0)
         self._clear_log()
         self._reset_meta()
-        self._track_done   = 0
-        self._total_tracks = 0
+        self._track_done       = 0
+        self._total_tracks     = 0
+        self._last_known_error = None
         self._set_status("⏳   Fetching album info...", "info")
         self._set_lyrics('<span foreground="#444444"><i>Lyrics will appear here during download...</i></span>')
         quality = self._get_quality()
@@ -341,14 +354,17 @@ class AurynApp:
     def _thread_main(self, url, quality):
         service, item_id = detect_service_and_id(url)
         if service == "qobuz" and item_id:
+            GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_qobuz_meta(item_id)
             if data and not data.get("status") == "error":
                 GLib.idle_add(self._apply_qobuz_meta, data)
         elif service == "deezer" and item_id:
+            GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_deezer_album(item_id)
             if data and not data.get("error"):
                 GLib.idle_add(self._apply_deezer_meta, data)
         elif service == "deezer_track" and item_id:
+            GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_deezer_track_album(item_id)
             if data and not data.get("error"):
                 GLib.idle_add(self._apply_deezer_meta, data)
@@ -357,6 +373,7 @@ class AurynApp:
                 title = data.get("title")
                 if artist and title:
                     threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, title), daemon=True).start()
+        GLib.idle_add(self._set_status, "⏳  Preparing download...", "info")
         self._run_download(url, quality)
 
     # ── Métadonnées ───────────────────────────────────────────────────────────
@@ -629,6 +646,7 @@ class AurynApp:
             os.close(slave_fd)
             return
 
+        GLib.idle_add(self._set_status, "🚀  Downloading...", "info")
         os.close(slave_fd)
         flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
         fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
@@ -666,6 +684,10 @@ class AurynApp:
                         if self._total_tracks > 0:
                             GLib.idle_add(self.progress_bar.set_fraction,
                                           min(self._track_done / self._total_tracks, 1.0))
+                            GLib.idle_add(self._set_status,
+                                          f"💾  Saving files ({self._track_done}/{self._total_tracks})...", "info")
+                        else:
+                            GLib.idle_add(self._set_status, "💾  Saving files...", "info")
                     m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                     if m:
                         GLib.idle_add(self.speed_lbl.set_markup,
@@ -685,6 +707,11 @@ class AurynApp:
         lo = line.lower()
         if any(w in lo for w in ["error", "failed", "exception", "traceback"]):
             tag = "error"
+            friendly = parse_streamrip_error(line)
+            if friendly:
+                self._set_status(friendly, "error")
+                if not self._last_known_error:
+                    self._last_known_error = friendly
         elif any(w in lo for w in ["done", "complete", "finished", "success"]):
             tag = "ok"
             self.progress_bar.set_fraction(1.0)
@@ -695,6 +722,8 @@ class AurynApp:
         elif any(w in lo for w in ["grabbing", "starting", "fetching", "found",
                                     "album", "artist", "label", "release", "quality", "tracks:"]):
             tag = "info"
+            if any(w in lo for w in ["fetching", "grabbing"]):
+                self._set_status("⏳  Processing metadata...", "info")
         else:
             tag = None
         self._extract_meta_from_log(line)
@@ -767,7 +796,8 @@ class AurynApp:
         else:
             code = self._process.returncode if self._process else -1
             if code != -15:
-                self._set_status("❌  Download failed — check the log.", "error")
+                status_msg = self._last_known_error or "❌  Download failed — check the log."
+                self._set_status(status_msg, "error")
                 self._log("\n❌  Download failed.\n", "error")
         self.btn_download.set_sensitive(True)
         self.btn_stop.hide()
@@ -787,10 +817,7 @@ class AurynApp:
         self.log_view.get_buffer().set_text("")
 
     def _set_status(self, text, style="info"):
-        colors = {"ok":"#87a556","error":"#e74c3c","track":"#FF6B35","info":"#555555"}
-        color = colors.get(style, "#555555")
-        safe = text.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-        self.status_lbl.set_markup(f'<span foreground="{color}" size="small">{safe}</span>')
+        self.status_lbl.set_markup(build_status_markup(text, style))
 
     def _reset_meta(self):
         for lbl in self._meta.values():
