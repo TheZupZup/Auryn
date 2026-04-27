@@ -905,7 +905,7 @@ class AurynApp:
         acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
         if os.path.exists(acc_path):
             try:
-                with open(acc_path, 'r') as f:
+                with open(acc_path, 'r', encoding="utf-8") as f:
                     acc = json.load(f)
             except Exception:
                 pass
@@ -939,15 +939,22 @@ class AurynApp:
             q_email = qobuz_email.get_text().strip()
             q_pass  = qobuz_pass.get_text().strip()
             if q_email or q_pass:
-                acc_data["qobuz"] = {"email": q_email, "password": q_pass}
+                if not isinstance(acc_data.get("qobuz"), dict):
+                    acc_data["qobuz"] = {}
+                acc_data["qobuz"]["email"] = q_email
+                acc_data["qobuz"]["password"] = q_pass
             d_arl = deezer_arl.get_text().strip()
             if d_arl:
-                acc_data["deezer"] = {"arl": d_arl}
+                if not isinstance(acc_data.get("deezer"), dict):
+                    acc_data["deezer"] = {}
+                acc_data["deezer"]["arl"] = d_arl
             t_token = tidal_token.get_text().strip()
             if t_token:
-                acc_data["tidal"] = {"token": t_token}
+                if not isinstance(acc_data.get("tidal"), dict):
+                    acc_data["tidal"] = {}
+                acc_data["tidal"]["token"] = t_token
             os.makedirs(os.path.dirname(acc_path), exist_ok=True)
-            with open(acc_path, "w") as f:
+            with open(acc_path, "w", encoding="utf-8") as f:
                 json.dump(acc_data, f, indent=2)
         dlg.destroy()
 
