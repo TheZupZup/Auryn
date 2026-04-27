@@ -148,6 +148,43 @@ def toml_escape(value):
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def parse_streamrip_error(output: str):
+    """Return a user-friendly message if output matches a known streamrip error, else None."""
+    lo = output.lower()
+
+    if any(p in lo for p in [
+        "authenticationerror", "authentication failed", "authentication error",
+        "login failed", "invalid credentials", "incorrect password",
+        "invalid email", "wrong password", "unauthorized",
+        "could not authenticate", "not authenticated",
+    ]):
+        return "❌  Authentication failed — check your credentials in accounts.json."
+
+    if any(p in lo for p in ["invalid arl", "arl expired", "arl is invalid", "bad arl"]):
+        return "❌  Deezer ARL token is invalid or expired — update it in accounts.json."
+
+    if any(p in lo for p in [
+        "invalid token", "token expired", "token is invalid", "token has expired",
+    ]):
+        return "❌  Access token is invalid or expired — re-authenticate your account."
+
+    if any(p in lo for p in [
+        "track not found", "album not found", "resource not found",
+        "resourcenotfounderror", "not available in your region", "does not exist",
+    ]):
+        return "❌  Content not found — the track or album may be unavailable."
+
+    if any(p in lo for p in [
+        "connectionerror", "connection refused", "network error",
+        "sslerror", "ssl error", "name or service not known",
+        "nodename nor servname provided", "errno 111", "errno 110",
+        "timed out", "read timeout", "connection timed out",
+    ]):
+        return "❌  Network error — check your internet connection and try again."
+
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  AurynApp — charge l'UI depuis Auryn.ui
 # ─────────────────────────────────────────────────────────────────────────────
@@ -215,10 +252,11 @@ class AurynApp:
         }
 
         # ── État interne ──
-        self._process      = None
-        self._dest_folder  = os.path.expanduser("~/Music")
-        self._track_done   = 0
-        self._total_tracks = 0
+        self._process          = None
+        self._dest_folder      = os.path.expanduser("~/Music")
+        self._track_done       = 0
+        self._total_tracks     = 0
+        self._last_known_error = None
 
         # ── Forcer can-focus sur les widgets interactifs ──
         self.url_entry.set_can_focus(True)
@@ -324,8 +362,9 @@ class AurynApp:
         self.progress_bar.set_fraction(0)
         self._clear_log()
         self._reset_meta()
-        self._track_done   = 0
-        self._total_tracks = 0
+        self._track_done       = 0
+        self._total_tracks     = 0
+        self._last_known_error = None
         self._set_status("⏳   Fetching album info...", "info")
         self._set_lyrics('<span foreground="#444444"><i>Lyrics will appear here during download...</i></span>')
         quality = self._get_quality()
@@ -685,6 +724,11 @@ class AurynApp:
         lo = line.lower()
         if any(w in lo for w in ["error", "failed", "exception", "traceback"]):
             tag = "error"
+            friendly = parse_streamrip_error(line)
+            if friendly:
+                self._set_status(friendly, "error")
+                if not self._last_known_error:
+                    self._last_known_error = friendly
         elif any(w in lo for w in ["done", "complete", "finished", "success"]):
             tag = "ok"
             self.progress_bar.set_fraction(1.0)
@@ -767,7 +811,8 @@ class AurynApp:
         else:
             code = self._process.returncode if self._process else -1
             if code != -15:
-                self._set_status("❌  Download failed — check the log.", "error")
+                status_msg = self._last_known_error or "❌  Download failed — check the log."
+                self._set_status(status_msg, "error")
                 self._log("\n❌  Download failed.\n", "error")
         self.btn_download.set_sensitive(True)
         self.btn_stop.hide()
