@@ -804,6 +804,133 @@ class AurynApp:
         pb.fill(0x161616ff)
         self.cover_img.set_from_pixbuf(pb)
 
+    def _show_credentials_dialog(self, *_):
+        dlg = Gtk.Dialog(
+            title="Credentials",
+            transient_for=self.window,
+            flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
+        )
+        dlg.set_default_size(420, -1)
+
+        cancel_btn = dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        save_btn   = dlg.add_button("Save",   Gtk.ResponseType.OK)
+        cancel_btn.get_style_context().add_class("neutral-btn")
+        save_btn.get_style_context().add_class("neutral-btn")
+
+        content = dlg.get_content_area()
+        content.set_spacing(0)
+
+        grid = Gtk.Grid()
+        grid.set_column_spacing(12)
+        grid.set_row_spacing(8)
+        grid.set_margin_start(20)
+        grid.set_margin_end(20)
+        grid.set_margin_top(16)
+        grid.set_margin_bottom(16)
+
+        _row = [0]
+
+        def section(title):
+            lbl = Gtk.Label()
+            lbl.set_markup(f'<span foreground="#FF6B35" weight="bold" size="small">{title}</span>')
+            lbl.set_halign(Gtk.Align.START)
+            if _row[0] > 0:
+                lbl.set_margin_top(6)
+            grid.attach(lbl, 0, _row[0], 2, 1)
+            _row[0] += 1
+
+        def field(label_text, placeholder="", secret=False):
+            lbl = Gtk.Label()
+            lbl.set_markup(f'<span foreground="#888888" size="small">{label_text}</span>')
+            lbl.set_halign(Gtk.Align.END)
+            lbl.set_valign(Gtk.Align.CENTER)
+            entry = Gtk.Entry()
+            entry.set_placeholder_text(placeholder)
+            entry.set_hexpand(True)
+            entry.set_visibility(not secret)
+            entry.get_style_context().add_class("cred-entry")
+            grid.attach(lbl, 0, _row[0], 1, 1)
+            if secret:
+                box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                box.pack_start(entry, True, True, 0)
+                toggle = Gtk.Button(label="Show")
+                toggle.get_style_context().add_class("neutral-btn")
+                def on_toggle(btn, e=entry):
+                    visible = not e.get_visibility()
+                    e.set_visibility(visible)
+                    btn.set_label("Hide" if visible else "Show")
+                toggle.connect("clicked", on_toggle)
+                box.pack_start(toggle, False, False, 0)
+                grid.attach(box, 1, _row[0], 1, 1)
+            else:
+                grid.attach(entry, 1, _row[0], 1, 1)
+            _row[0] += 1
+            return entry
+
+        def separator():
+            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            sep.set_margin_top(4)
+            sep.set_margin_bottom(4)
+            grid.attach(sep, 0, _row[0], 2, 1)
+            _row[0] += 1
+
+        acc = {}
+        acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
+        if os.path.exists(acc_path):
+            try:
+                with open(acc_path, 'r', encoding="utf-8") as f:
+                    acc = json.load(f)
+            except Exception:
+                pass
+
+        section("Qobuz")
+        qobuz_email = field("Email",    "your@email.com")
+        qobuz_pass  = field("Password", "••••••••", secret=True)
+        if isinstance(acc.get("qobuz"), dict):
+            qobuz_email.set_text(acc["qobuz"].get("email", ""))
+            qobuz_pass.set_text(acc["qobuz"].get("password", ""))
+
+        separator()
+
+        section("Deezer")
+        deezer_arl = field("ARL Token", "paste your ARL here", secret=True)
+        if isinstance(acc.get("deezer"), dict):
+            deezer_arl.set_text(acc["deezer"].get("arl", ""))
+
+        separator()
+
+        section("Tidal")
+        tidal_token = field("Token", "paste your token here", secret=True)
+        if isinstance(acc.get("tidal"), dict):
+            tidal_token.set_text(acc["tidal"].get("token", ""))
+
+        content.pack_start(grid, True, True, 0)
+        dlg.show_all()
+        resp = dlg.run()
+        if resp == Gtk.ResponseType.OK:
+            acc_data = dict(acc)
+            q_email = qobuz_email.get_text().strip()
+            q_pass  = qobuz_pass.get_text().strip()
+            if q_email or q_pass:
+                if not isinstance(acc_data.get("qobuz"), dict):
+                    acc_data["qobuz"] = {}
+                acc_data["qobuz"]["email"] = q_email
+                acc_data["qobuz"]["password"] = q_pass
+            d_arl = deezer_arl.get_text().strip()
+            if d_arl:
+                if not isinstance(acc_data.get("deezer"), dict):
+                    acc_data["deezer"] = {}
+                acc_data["deezer"]["arl"] = d_arl
+            t_token = tidal_token.get_text().strip()
+            if t_token:
+                if not isinstance(acc_data.get("tidal"), dict):
+                    acc_data["tidal"] = {}
+                acc_data["tidal"]["token"] = t_token
+            os.makedirs(os.path.dirname(acc_path), exist_ok=True)
+            with open(acc_path, "w", encoding="utf-8") as f:
+                json.dump(acc_data, f, indent=2)
+        dlg.destroy()
+
     def _show_about(self, *_):
         dlg = Gtk.AboutDialog()
         dlg.set_transient_for(self.window)
