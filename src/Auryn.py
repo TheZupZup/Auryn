@@ -933,7 +933,22 @@ class AurynApp:
 
         content.pack_start(grid, True, True, 0)
         dlg.show_all()
-        dlg.run()
+        resp = dlg.run()
+        if resp == Gtk.ResponseType.OK:
+            acc_data = {}
+            q_email = qobuz_email.get_text().strip()
+            q_pass  = qobuz_pass.get_text().strip()
+            if q_email or q_pass:
+                acc_data["qobuz"] = {"email": q_email, "password": q_pass}
+            d_arl = deezer_arl.get_text().strip()
+            if d_arl:
+                acc_data["deezer"] = {"arl": d_arl}
+            t_token = tidal_token.get_text().strip()
+            if t_token:
+                acc_data["tidal"] = {"token": t_token}
+            os.makedirs(os.path.dirname(acc_path), exist_ok=True)
+            with open(acc_path, "w") as f:
+                json.dump(acc_data, f, indent=2)
         dlg.destroy()
 
     def _show_about(self, *_):
