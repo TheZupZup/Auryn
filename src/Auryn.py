@@ -380,14 +380,17 @@ class AurynApp:
     def _thread_main(self, url, quality):
         service, item_id = detect_service_and_id(url)
         if service == "qobuz" and item_id:
+            GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_qobuz_meta(item_id)
             if data and not data.get("status") == "error":
                 GLib.idle_add(self._apply_qobuz_meta, data)
         elif service == "deezer" and item_id:
+            GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_deezer_album(item_id)
             if data and not data.get("error"):
                 GLib.idle_add(self._apply_deezer_meta, data)
         elif service == "deezer_track" and item_id:
+            GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_deezer_track_album(item_id)
             if data and not data.get("error"):
                 GLib.idle_add(self._apply_deezer_meta, data)
@@ -396,6 +399,7 @@ class AurynApp:
                 title = data.get("title")
                 if artist and title:
                     threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, title), daemon=True).start()
+        GLib.idle_add(self._set_status, "⏳  Preparing download...", "info")
         self._run_download(url, quality)
 
     # ── Métadonnées ───────────────────────────────────────────────────────────
@@ -668,6 +672,7 @@ class AurynApp:
             os.close(slave_fd)
             return
 
+        GLib.idle_add(self._set_status, "🚀  Downloading...", "info")
         os.close(slave_fd)
         flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
         fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
@@ -705,6 +710,10 @@ class AurynApp:
                         if self._total_tracks > 0:
                             GLib.idle_add(self.progress_bar.set_fraction,
                                           min(self._track_done / self._total_tracks, 1.0))
+                            GLib.idle_add(self._set_status,
+                                          f"💾  Saving files ({self._track_done}/{self._total_tracks})...", "info")
+                        else:
+                            GLib.idle_add(self._set_status, "💾  Saving files...", "info")
                     m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                     if m:
                         GLib.idle_add(self.speed_lbl.set_markup,
@@ -739,6 +748,8 @@ class AurynApp:
         elif any(w in lo for w in ["grabbing", "starting", "fetching", "found",
                                     "album", "artist", "label", "release", "quality", "tracks:"]):
             tag = "info"
+            if any(w in lo for w in ["fetching", "grabbing"]):
+                self._set_status("⏳  Processing metadata...", "info")
         else:
             tag = None
         self._extract_meta_from_log(line)
