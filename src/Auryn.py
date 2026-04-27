@@ -913,7 +913,7 @@ class AurynApp:
         section("Qobuz")
         qobuz_email = field("Email",    "your@email.com")
         qobuz_pass  = field("Password", "••••••••", secret=True)
-        if "qobuz" in acc:
+        if isinstance(acc.get("qobuz"), dict):
             qobuz_email.set_text(acc["qobuz"].get("email", ""))
             qobuz_pass.set_text(acc["qobuz"].get("password", ""))
 
@@ -921,14 +921,14 @@ class AurynApp:
 
         section("Deezer")
         deezer_arl = field("ARL Token", "paste your ARL here", secret=True)
-        if "deezer" in acc:
+        if isinstance(acc.get("deezer"), dict):
             deezer_arl.set_text(acc["deezer"].get("arl", ""))
 
         separator()
 
         section("Tidal")
         tidal_token = field("Token", "paste your token here", secret=True)
-        if "tidal" in acc:
+        if isinstance(acc.get("tidal"), dict):
             tidal_token.set_text(acc["tidal"].get("token", ""))
 
         content.pack_start(grid, True, True, 0)
