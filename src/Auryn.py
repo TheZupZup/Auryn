@@ -935,7 +935,7 @@ class AurynApp:
         dlg.show_all()
         resp = dlg.run()
         if resp == Gtk.ResponseType.OK:
-            acc_data = {}
+            acc_data = dict(acc)
             q_email = qobuz_email.get_text().strip()
             q_pass  = qobuz_pass.get_text().strip()
             if q_email or q_pass:
