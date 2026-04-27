@@ -1,26 +1,3 @@
-## 🛡️ License & Commercial Use
-
-Auryn is a project created and owned by TheZupZup.
-
-To protect the work behind this project while keeping it accessible, Auryn is distributed under a **non-commercial license**.
-
-### TL;DR
-
-* ✅ Personal and non-profit use is allowed
-* ❌ Commercial use, resale, or SaaS hosting is not allowed without permission
-
-For full license terms, see the [LICENSE](./LICENSE) file.
-
----
-
-If you are interested in using Auryn in a commercial context or want to discuss licensing:
-
-📩 [Contact me for commercial licensing](mailto:copyright.crewmate858@passmail.net)
-
-
-
-
-
 # Auryn
 [![Download](https://img.shields.io/badge/Download-.deb-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/Auryn)](https://hub.docker.com/r/thezupzup/Auryn)
