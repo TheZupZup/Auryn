@@ -931,24 +931,49 @@ class AurynApp:
         if isinstance(acc.get("tidal"), dict):
             tidal_token.set_text(acc["tidal"].get("token", ""))
 
+        err_lbl = Gtk.Label(label="")
+        err_lbl.set_halign(Gtk.Align.CENTER)
+        err_lbl.set_margin_top(4)
+        err_lbl.set_margin_bottom(4)
+
         content.pack_start(grid, True, True, 0)
+        content.pack_start(err_lbl, False, False, 0)
         dlg.show_all()
-        resp = dlg.run()
-        if resp == Gtk.ResponseType.OK:
-            acc_data = dict(acc)
+
+        _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+        while True:
+            resp = dlg.run()
+            if resp != Gtk.ResponseType.OK:
+                break
+
             q_email = qobuz_email.get_text().strip()
             q_pass  = qobuz_pass.get_text().strip()
+            d_arl   = deezer_arl.get_text().strip()
+            t_token = tidal_token.get_text().strip()
+
+            error = None
+            if q_email and not _EMAIL_RE.match(q_email):
+                error = "Qobuz email does not look valid."
+            elif isinstance(acc.get("deezer"), dict) and acc["deezer"].get("arl") and not d_arl:
+                error = "Deezer ARL cannot be empty."
+            elif isinstance(acc.get("tidal"), dict) and acc["tidal"].get("token") and not t_token:
+                error = "Tidal token cannot be empty."
+
+            if error:
+                err_lbl.set_markup(f'<span foreground="#e74c3c">❌  {error}</span>')
+                continue
+
+            acc_data = dict(acc)
             if q_email or q_pass:
                 if not isinstance(acc_data.get("qobuz"), dict):
                     acc_data["qobuz"] = {}
                 acc_data["qobuz"]["email"] = q_email
                 acc_data["qobuz"]["password"] = q_pass
-            d_arl = deezer_arl.get_text().strip()
             if d_arl:
                 if not isinstance(acc_data.get("deezer"), dict):
                     acc_data["deezer"] = {}
                 acc_data["deezer"]["arl"] = d_arl
-            t_token = tidal_token.get_text().strip()
             if t_token:
                 if not isinstance(acc_data.get("tidal"), dict):
                     acc_data["tidal"] = {}
@@ -956,6 +981,9 @@ class AurynApp:
             os.makedirs(os.path.dirname(acc_path), exist_ok=True)
             with open(acc_path, "w", encoding="utf-8") as f:
                 json.dump(acc_data, f, indent=2)
+            self._set_status("✅  Credentials saved.", "ok")
+            break
+
         dlg.destroy()
 
     def _show_about(self, *_):
