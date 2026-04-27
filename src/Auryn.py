@@ -46,6 +46,8 @@ window { background-color: #1a1a1a; color: #e8e8e8; }
 #right_panel { background-color: #111111; border-left: 1px solid #252525; padding: 10px; min-width: 200px; }
 #url_entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 3px; padding: 6px 10px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; }
 #url_entry:focus { border-color: #FF6B35; }
+.cred-entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 3px; padding: 6px 10px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; }
+.cred-entry:focus { border-color: #FF6B35; }
 #quality_box { background-color: #111111; border: 1px solid #252525; border-radius: 3px; padding: 5px 12px; }
 checkbutton { color: #aaaaaa; font-size: 12px; }
 checkbutton check { background-color: #0d0d0d; border-color: #444; border-radius: 2px; min-width: 14px; min-height: 14px; }
@@ -184,7 +186,8 @@ class AurynApp:
         self.btn_download  = self.builder.get_object("btn_download")
         self.btn_stop      = self.builder.get_object("btn_stop")
         self.btn_about     = self.builder.get_object("btn_about")
-        self.btn_setup     = self.builder.get_object("btn_setup")
+        self.btn_setup       = self.builder.get_object("btn_setup")
+        self.btn_credentials = self.builder.get_object("btn_credentials")
         self.btn_choose    = self.builder.get_object("btn_choose_folder")
         self.btn_open      = self.builder.get_object("btn_open_folder")
         self.btn_log       = self.builder.get_object("btn_open_log")
@@ -236,6 +239,7 @@ class AurynApp:
         self.btn_log.set_can_focus(True)
         self.btn_about.set_can_focus(True)
         self.btn_setup.set_can_focus(True)
+        self.btn_credentials.set_can_focus(True)
         self.cb_clear_cache.set_can_focus(True)
         for cb in self._quality_checks:
             cb.set_can_focus(True)
@@ -258,6 +262,7 @@ class AurynApp:
         self.btn_stop.connect("clicked", self._on_stop)
         self.btn_about.connect("clicked", self._show_about)
         self.btn_setup.connect("clicked", self._show_setup_wizard)
+        self.btn_credentials.connect("clicked", self._show_credentials_dialog)
         self.btn_choose.connect("clicked", self._choose_folder)
         self.btn_open.connect("clicked", self._open_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
@@ -825,6 +830,83 @@ class AurynApp:
         pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 185, 185)
         pb.fill(0x161616ff)
         self.cover_img.set_from_pixbuf(pb)
+
+    def _show_credentials_dialog(self, *_):
+        dlg = Gtk.Dialog(
+            title="Credentials",
+            transient_for=self.window,
+            flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
+        )
+        dlg.set_default_size(420, -1)
+
+        cancel_btn = dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        save_btn   = dlg.add_button("Save",   Gtk.ResponseType.OK)
+        cancel_btn.get_style_context().add_class("neutral-btn")
+        save_btn.get_style_context().add_class("neutral-btn")
+
+        content = dlg.get_content_area()
+        content.set_spacing(0)
+
+        grid = Gtk.Grid()
+        grid.set_column_spacing(12)
+        grid.set_row_spacing(8)
+        grid.set_margin_start(20)
+        grid.set_margin_end(20)
+        grid.set_margin_top(16)
+        grid.set_margin_bottom(16)
+
+        _row = [0]
+
+        def section(title):
+            lbl = Gtk.Label()
+            lbl.set_markup(f'<span foreground="#FF6B35" weight="bold" size="small">{title}</span>')
+            lbl.set_halign(Gtk.Align.START)
+            if _row[0] > 0:
+                lbl.set_margin_top(6)
+            grid.attach(lbl, 0, _row[0], 2, 1)
+            _row[0] += 1
+
+        def field(label_text, placeholder="", secret=False, sensitive=True):
+            lbl = Gtk.Label()
+            lbl.set_markup(f'<span foreground="#888888" size="small">{label_text}</span>')
+            lbl.set_halign(Gtk.Align.END)
+            lbl.set_valign(Gtk.Align.CENTER)
+            entry = Gtk.Entry()
+            entry.set_placeholder_text(placeholder)
+            entry.set_hexpand(True)
+            entry.set_visibility(not secret)
+            entry.set_sensitive(sensitive)
+            entry.get_style_context().add_class("cred-entry")
+            grid.attach(lbl,   0, _row[0], 1, 1)
+            grid.attach(entry, 1, _row[0], 1, 1)
+            _row[0] += 1
+            return entry
+
+        def separator():
+            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            sep.set_margin_top(4)
+            sep.set_margin_bottom(4)
+            grid.attach(sep, 0, _row[0], 2, 1)
+            _row[0] += 1
+
+        section("Qobuz")
+        field("Email",    "your@email.com")
+        field("Password", "••••••••", secret=True)
+
+        separator()
+
+        section("Deezer")
+        field("ARL Token", "paste your ARL here")
+
+        separator()
+
+        section("Tidal")
+        field("Token", "not yet supported", sensitive=False)
+
+        content.pack_start(grid, True, True, 0)
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
 
     def _show_about(self, *_):
         dlg = Gtk.AboutDialog()
