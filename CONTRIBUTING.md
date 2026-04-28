@@ -27,7 +27,7 @@ refactor/split-modules
 
 ## Pull Requests
 
-All changes must go through a Pull Request to main.
+All changes must go through a Pull Request to `main`.
 
 Before opening a PR:
 
