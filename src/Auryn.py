@@ -8,9 +8,11 @@ UI chargée depuis Auryn.ui (Glade)
 
 import os
 import re
+import difflib
 import threading
 import subprocess
 import urllib.request
+import urllib.parse
 import json
 import tempfile
 import platform
@@ -75,6 +77,36 @@ separator { background-color: #252525; }
 
 QUALITY_LABELS = ["MP3 128", "MP3 320", "FLAC 16/44.1", "FLAC 24/96+", "Max (MQA)"]
 QUALITY_VALUES = ["0",       "1",       "2",            "3",           "4"]
+
+# ── Lyrics matching helpers ───────────────────────────────────────────────────
+
+_FEAT_RE       = re.compile(r'\s*[\(\[（]?(?:feat\.?|featuring|ft\.?)\s[^\)\]）]*[\)\]）]?\s*', re.I)
+_ANNOT_RE      = re.compile(r'\s*[\(\[（][^\)\]）]*(?:remaster|deluxe|version|edit|remix)[^\)\]）]*[\)\]）]\s*', re.I)
+
+
+def _normalize_text(s):
+    s = _FEAT_RE.sub(' ', s.lower().strip())
+    s = _ANNOT_RE.sub(' ', s)
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def _match_score(query_track, query_artist, cand_track, cand_artist,
+                 query_dur=None, cand_dur=None):
+    t = difflib.SequenceMatcher(None, _normalize_text(query_track),
+                                _normalize_text(cand_track)).ratio()
+    a = difflib.SequenceMatcher(None, query_artist.lower().strip(),
+                                cand_artist.lower().strip()).ratio()
+    score = 0.6 * t + 0.4 * a
+    if query_dur is not None and cand_dur is not None:
+        try:
+            delta = abs(float(query_dur) - float(cand_dur))
+            if delta <= 3:
+                score += 0.15
+            elif delta > 15:
+                score -= 0.20
+        except (TypeError, ValueError):
+            pass
+    return score
 
 
 def detect_service_and_id(url):
@@ -365,14 +397,22 @@ class AurynApp:
                 GLib.idle_add(self._apply_deezer_meta, data)
         elif service == "deezer_track" and item_id:
             GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
-            data = fetch_deezer_track_album(item_id)
-            if data and not data.get("error"):
-                GLib.idle_add(self._apply_deezer_meta, data)
-                # For single track, fetch lyrics immediately
-                artist = data.get("artist", {}).get("name")
-                title = data.get("title")
+            album_data = fetch_deezer_track_album(item_id)
+            track_data = fetch_json(f"https://api.deezer.com/track/{item_id}")
+            if album_data and not album_data.get("error"):
+                GLib.idle_add(self._apply_deezer_meta, album_data)
+                artist   = ((track_data or {}).get("artist", {}).get("name")
+                            or album_data.get("artist", {}).get("name"))
+                title    = (track_data or {}).get("title")
+                album    = album_data.get("title")
+                duration = (track_data or {}).get("duration")
                 if artist and title:
-                    threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, title), daemon=True).start()
+                    threading.Thread(
+                        target=self._fetch_and_apply_lyrics,
+                        args=(artist, title),
+                        kwargs={"album": album, "duration": duration},
+                        daemon=True,
+                    ).start()
         GLib.idle_add(self._set_status, "⏳  Preparing download...", "info")
         self._run_download(url, quality)
 
@@ -785,7 +825,14 @@ class AurynApp:
             self._set_status(f"🎵  {track_name[:80]}", "track")
             artist = self._meta["Album Artist"].get_text()
             if artist != "—" and artist:
-                threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, track_name), daemon=True).start()
+                raw_album = self._meta["Album"].get_text()
+                album_arg = raw_album if raw_album and raw_album != "—" else None
+                threading.Thread(
+                    target=self._fetch_and_apply_lyrics,
+                    args=(artist, track_name),
+                    kwargs={"album": album_arg},
+                    daemon=True,
+                ).start()
 
         m = re.search(r'Release\s+date[:\s]+(\d{4}[-/]\d{2}[-/]\d{2})', line, re.I)
         if m: sm("Release Date", m.group(1))
@@ -1016,30 +1063,50 @@ class AurynApp:
 
     # ── Lyrics Logic ─────────────────────────────────────────────────────────
 
-    def _fetch_and_apply_lyrics(self, artist, track):
+    def _fetch_and_apply_lyrics(self, artist, track, album=None, duration=None):
         try:
-            q_artist = urllib.parse.quote(artist)
-            q_track = urllib.parse.quote(track)
-            url = f"https://lrclib.net/api/get?artist_name={q_artist}&track_name={q_track}"
-            
+            params = {"artist_name": artist, "track_name": track}
+            if album:
+                params["album_name"] = album
+            url = "https://lrclib.net/api/search?" + urllib.parse.urlencode(params)
+
             req = urllib.request.Request(url, headers={"User-Agent": "Auryn/0.1.1 (GTK3)"})
             with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read().decode())
-                
-            lyrics = data.get("syncedLyrics") or data.get("plainLyrics")
+                results = json.loads(r.read().decode())
+
+            best_score = -1.0
+            best_result = None
+            if isinstance(results, list):
+                for candidate in results:
+                    cand_track  = candidate.get("trackName")  or ""
+                    cand_artist = candidate.get("artistName") or ""
+                    cand_dur    = candidate.get("duration")
+                    score = _match_score(track, artist, cand_track, cand_artist,
+                                         duration, cand_dur)
+                    if score > best_score:
+                        best_score  = score
+                        best_result = candidate
+
+            _THRESHOLD = 0.55
+            lyrics = None
+            if best_result and best_score >= _THRESHOLD:
+                lyrics = best_result.get("syncedLyrics") or best_result.get("plainLyrics")
+
             if lyrics:
-                # Nettoyage et échappement
-                safe_track = track.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                safe_track  = track.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 safe_lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 clean_lyrics = re.sub(r'\[\d+:\d+\.\d+\]', '', safe_lyrics).strip()
-                markup = f'<span foreground="#FF6B35" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
+                markup = (f'<span foreground="#FF6B35" weight="bold" size="large">'
+                          f'{safe_track}</span>\n\n{clean_lyrics}')
                 GLib.idle_add(self.lyrics_label.set_markup, markup)
             else:
                 track_esc = track.replace("&", "&amp;").replace("<", "&lt;")
-                GLib.idle_add(self.lyrics_label.set_markup, f'<span foreground="#555555"><i>Lyrics not found for: {track_esc}</i></span>')
+                GLib.idle_add(self.lyrics_label.set_markup,
+                    f'<span foreground="#555555"><i>Lyrics not found for: {track_esc}</i></span>')
         except Exception as e:
             err_esc = str(e).replace("&", "&amp;").replace("<", "&lt;")
-            GLib.idle_add(self.lyrics_label.set_markup, f'<span foreground="#e74c3c"><i>Error fetching lyrics: {err_esc}</i></span>')
+            GLib.idle_add(self.lyrics_label.set_markup,
+                f'<span foreground="#e74c3c"><i>Error fetching lyrics: {err_esc}</i></span>')
 
     def _set_lyrics(self, text):
         # Cette méthode attend du markup déjà prêt ou du texte simple
