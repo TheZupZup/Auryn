@@ -497,6 +497,13 @@ class AurynApp:
             self._log("⚠  Startup checks found issues:\n", "info")
             for issue in issues:
                 self._log(f"   • {issue}\n", "info")
+
+        acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
+        if not os.path.exists(acc_path):
+            self._log(
+                "ℹ  No credentials saved yet — click the Credentials button to set up your accounts.\n",
+                "info",
+            )
         return False
 
     def _show_setup_wizard(self, *_):
@@ -508,6 +515,12 @@ class AurynApp:
             body = "Issues detected:\n- " + "\n- ".join(issues)
             status = "⚠ Setup needs attention"
 
+        acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
+        if os.path.exists(acc_path):
+            body += "\n\n✅ Credentials saved."
+        else:
+            body += "\n\n⚠ No credentials saved yet — click \"Set up Accounts\" to enter your service credentials."
+
         dlg = Gtk.MessageDialog(
             transient_for=self.window,
             flags=0,
@@ -518,6 +531,7 @@ class AurynApp:
         dlg.format_secondary_text(body)
         if not ok:
             dlg.add_button("Auto-fix", 1)
+        dlg.add_button("Set up Accounts", 2)
         dlg.add_button("Close", Gtk.ResponseType.CLOSE)
         response = dlg.run()
         dlg.destroy()
@@ -532,6 +546,9 @@ class AurynApp:
                 self._log("❌  Setup auto-fix could not solve all issues:\n", "error")
                 for issue in fixed_issues:
                     self._log(f"   • {issue}\n", "error")
+        elif response == 2:
+            self._show_credentials_dialog()
+            self._show_setup_wizard()
 
     def _update_config(self, cfg, pattern, replacement, first_only=False):
         if not os.path.exists(cfg):
