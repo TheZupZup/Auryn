@@ -13,6 +13,7 @@ import threading
 import subprocess
 import urllib.request
 import urllib.parse
+import urllib.error
 import json
 import tempfile
 import platform
@@ -407,6 +408,8 @@ class AurynApp:
                 album    = album_data.get("title")
                 duration = (track_data or {}).get("duration")
                 if artist and title:
+                    GLib.idle_add(self._set_lyrics,
+                        '<span foreground="#444444"><i>Fetching lyrics…</i></span>')
                     threading.Thread(
                         target=self._fetch_and_apply_lyrics,
                         args=(artist, title),
@@ -827,6 +830,8 @@ class AurynApp:
             if artist != "—" and artist:
                 raw_album = self._meta["Album"].get_text()
                 album_arg = raw_album if raw_album and raw_album != "—" else None
+                GLib.idle_add(self._set_lyrics,
+                    '<span foreground="#444444"><i>Fetching lyrics…</i></span>')
                 threading.Thread(
                     target=self._fetch_and_apply_lyrics,
                     args=(artist, track_name),
@@ -1100,13 +1105,17 @@ class AurynApp:
                           f'{safe_track}</span>\n\n{clean_lyrics}')
                 GLib.idle_add(self.lyrics_label.set_markup, markup)
             else:
-                track_esc = track.replace("&", "&amp;").replace("<", "&lt;")
                 GLib.idle_add(self.lyrics_label.set_markup,
-                    f'<span foreground="#555555"><i>Lyrics not found for: {track_esc}</i></span>')
-        except Exception as e:
-            err_esc = str(e).replace("&", "&amp;").replace("<", "&lt;")
+                    '<span foreground="#555555"><i>No lyrics available for this track</i></span>')
+        except urllib.error.HTTPError:
             GLib.idle_add(self.lyrics_label.set_markup,
-                f'<span foreground="#e74c3c"><i>Error fetching lyrics: {err_esc}</i></span>')
+                '<span foreground="#555555"><i>Lyrics service unavailable — try again later</i></span>')
+        except urllib.error.URLError:
+            GLib.idle_add(self.lyrics_label.set_markup,
+                '<span foreground="#555555"><i>No lyrics available — check your connection</i></span>')
+        except Exception:
+            GLib.idle_add(self.lyrics_label.set_markup,
+                '<span foreground="#555555"><i>No lyrics available for this track</i></span>')
 
     def _set_lyrics(self, text):
         # Cette méthode attend du markup déjà prêt ou du texte simple
