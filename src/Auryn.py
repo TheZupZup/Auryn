@@ -1158,8 +1158,16 @@ class AurynApp:
             transient_for=self.window,
             modal=True,
         )
+        copy_btn = dlg.add_button("Copy", 1)
         dlg.add_button("Close", Gtk.ResponseType.CLOSE)
         dlg.set_default_size(720, 480)
+
+        def _on_copy(_btn):
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(output, -1)
+            clipboard.store()
+
+        copy_btn.connect("clicked", _on_copy)
 
         text_view = Gtk.TextView()
         text_view.set_editable(False)
