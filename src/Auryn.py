@@ -180,6 +180,52 @@ def open_in_file_manager(path):
         subprocess.Popen(["xdg-open", path])
 
 
+def run_doctor():
+    """Fail-fast environment check; prints only the first problem found."""
+    if sys.version_info < (3, 8):
+        print(f"FAIL  Python >= 3.8 required (found {sys.version.split()[0]})")
+        return False
+
+    try:
+        import gi as _gi
+        _gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk as _Gtk  # noqa: F401
+    except Exception as exc:
+        print(f"FAIL  GTK/PyGObject unavailable: {exc}")
+        return False
+
+    rip_path = shutil.which("rip")
+    if not rip_path:
+        for _c in [
+            os.path.expanduser("~/.local/bin/rip"),
+            "/usr/local/bin/rip",
+            "/usr/bin/rip",
+        ]:
+            if os.path.isfile(_c):
+                rip_path = _c
+                break
+    if not rip_path:
+        print("FAIL  streamrip (rip) not found in PATH or common locations.")
+        return False
+
+    cfg_path = os.path.join(resolve_config_dir(), "config.toml")
+    if not os.path.exists(cfg_path):
+        print(f"FAIL  streamrip config not found: {cfg_path}  (run: rip config reset)")
+        return False
+
+    folder = os.path.expanduser("~/Music")
+    try:
+        os.makedirs(folder, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=folder, delete=True):
+            pass
+    except Exception:
+        print(f"FAIL  Default download folder not writable: {folder}")
+        return False
+
+    print("OK  All checks passed.")
+    return True
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  AurynApp — charge l'UI depuis Auryn.ui
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1123,6 +1169,9 @@ if __name__ == "__main__":
     if IS_MACOS:
         print("Auryn is not supported on macOS yet. Please use Linux or Windows.")
         raise SystemExit(1)
+
+    if "--doctor" in sys.argv:
+        raise SystemExit(0 if run_doctor() else 1)
 
     app = AurynApp()
     Gtk.main()
