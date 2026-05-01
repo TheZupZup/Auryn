@@ -1,0 +1,53 @@
+app-id: io.github.thezupzup.Auryn
+runtime: org.gnome.Platform
+runtime-version: '45'
+sdk: org.gnome.Sdk
+command: auryn
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-music
+  - --filesystem=xdg-download
+
+modules:
+  # TODO: package streamrip and its Python dependencies here as a proper
+  # python3-modules entry generated via flatpak-pip-generator. For now this
+  # MVP manifest only builds the Auryn GUI; streamrip must be installed by
+  # the user inside the sandbox or bundled later.
+  #
+  # Example (to be filled in):
+  # - name: python3-streamrip
+  #   buildsystem: simple
+  #   build-commands:
+  #     - pip3 install --prefix=/app --no-deps streamrip
+  #   sources: [...]
+
+  - name: auryn
+    buildsystem: simple
+    build-commands:
+      # Install the Python sources into /app/share/auryn
+      - mkdir -p /app/share/auryn
+      - cp -r src/* /app/share/auryn/
+
+      # Launcher script on PATH
+      - install -Dm755 packaging/flatpak/auryn.sh /app/bin/auryn
+
+      # Desktop entry (renamed to match app-id)
+      - install -Dm644 desktop/Auryn.desktop
+          /app/share/applications/io.github.thezupzup.Auryn.desktop
+
+      # Icons
+      - install -Dm644 assets/Auryn.svg
+          /app/share/icons/hicolor/scalable/apps/io.github.thezupzup.Auryn.svg
+      - install -Dm644 assets/Auryn_256.png
+          /app/share/icons/hicolor/256x256/apps/io.github.thezupzup.Auryn.png
+      - install -Dm644 assets/Auryn_48.png
+          /app/share/icons/hicolor/48x48/apps/io.github.thezupzup.Auryn.png
+    sources:
+      - type: dir
+        path: ../..
