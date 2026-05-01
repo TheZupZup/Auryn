@@ -21,6 +21,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.errors import parse_streamrip_error
 from core.status import build_status_markup
 
+APP_NAME = "Auryn"
+APP_VERSION = "0.1.0"
+
 SYSTEM_NAME = platform.system()
 IS_WINDOWS = SYSTEM_NAME == "Windows"
 IS_MACOS = SYSTEM_NAME == "Darwin"
@@ -1169,6 +1172,10 @@ if __name__ == "__main__":
     if IS_MACOS:
         print("Auryn is not supported on macOS yet. Please use Linux or Windows.")
         raise SystemExit(1)
+
+    if "--version" in sys.argv:
+        print(f"{APP_NAME} {APP_VERSION}")
+        raise SystemExit(0)
 
     if "--doctor" in sys.argv:
         raise SystemExit(0 if run_doctor() else 1)
