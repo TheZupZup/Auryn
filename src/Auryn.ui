@@ -140,6 +140,22 @@
                 <property name="position">8</property>
               </packing>
             </child>
+            <child>
+              <object class="GtkButton" id="btn_diagnostics">
+                <property name="label">Diagnostics</property>
+                <property name="can-focus">False</property>
+                <property name="receives-default">False</property>
+                <style>
+                  <class name="neutral-btn"/>
+                </style>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="pack-type">end</property>
+                <property name="position">9</property>
+              </packing>
+            </child>
           </object>
           <packing>
             <property name="expand">False</property>
