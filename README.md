@@ -142,7 +142,7 @@ Windows support is experimental. The app has a cross-platform path layer and an 
 
 - Python 3.11+
 - [streamrip](https://github.com/nathom/streamrip) installed and available on `PATH` as `rip`
-- GTK 4 and PyGObject installed through a supported Windows method (for example MSYS2, or another PyGObject-compatible environment)
+- GTK 3 and PyGObject installed through a supported Windows method (for example MSYS2, or another PyGObject-compatible environment)
 
 ### Basic setup
 
