@@ -29,7 +29,6 @@ IS_WINDOWS = SYSTEM_NAME == "Windows"
 IS_MACOS = SYSTEM_NAME == "Darwin"
 IS_UNSUPPORTED_OS = IS_WINDOWS or IS_MACOS
 
-gi = None
 pty = None
 fcntl = None
 
@@ -37,7 +36,10 @@ if not IS_WINDOWS:
     import pty
     import fcntl
 
-if not IS_MACOS:
+
+def _import_gtk():
+    """Import GTK into module globals; deferred so CLI flags work without GTK."""
+    global Gtk, GLib, Gdk, GdkPixbuf, Pango
     import gi
     gi.require_version('Gtk', '3.0')
     gi.require_version('Gdk', '3.0')
@@ -1180,5 +1182,6 @@ if __name__ == "__main__":
     if "--doctor" in sys.argv:
         raise SystemExit(0 if run_doctor() else 1)
 
+    _import_gtk()
     app = AurynApp()
     Gtk.main()
