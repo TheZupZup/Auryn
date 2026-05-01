@@ -16,6 +16,8 @@ import json
 import tempfile
 import platform
 import sys
+import io
+import contextlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.errors import parse_streamrip_error
@@ -279,6 +281,7 @@ class AurynApp:
         self.btn_about     = self.builder.get_object("btn_about")
         self.btn_setup       = self.builder.get_object("btn_setup")
         self.btn_credentials = self.builder.get_object("btn_credentials")
+        self.btn_diagnostics = self.builder.get_object("btn_diagnostics")
         self.btn_choose    = self.builder.get_object("btn_choose_folder")
         self.btn_open      = self.builder.get_object("btn_open_folder")
         self.btn_log       = self.builder.get_object("btn_open_log")
@@ -331,6 +334,7 @@ class AurynApp:
         self.btn_about.set_can_focus(True)
         self.btn_setup.set_can_focus(True)
         self.btn_credentials.set_can_focus(True)
+        self.btn_diagnostics.set_can_focus(True)
         self.cb_clear_cache.set_can_focus(True)
         for cb in self._quality_checks:
             cb.set_can_focus(True)
@@ -354,6 +358,7 @@ class AurynApp:
         self.btn_about.connect("clicked", self._show_about)
         self.btn_setup.connect("clicked", self._show_setup_wizard)
         self.btn_credentials.connect("clicked", self._show_credentials_dialog)
+        self.btn_diagnostics.connect("clicked", self._show_diagnostics)
         self.btn_choose.connect("clicked", self._choose_folder)
         self.btn_open.connect("clicked", self._open_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
@@ -1136,6 +1141,45 @@ class AurynApp:
             os.makedirs(os.path.dirname(acc_path), exist_ok=True)
             with open(acc_path, "w", encoding="utf-8") as f:
                 json.dump(acc_data, f, indent=2)
+        dlg.destroy()
+
+    def _show_diagnostics(self, *_):
+        buf_io = io.StringIO()
+        with contextlib.redirect_stdout(buf_io), contextlib.redirect_stderr(buf_io):
+            try:
+                ok = run_doctor(verbose=True)
+            except Exception as exc:
+                ok = False
+                print(f"FAIL  Diagnostics raised an exception: {exc}")
+        output = buf_io.getvalue() or "(no output)"
+
+        dlg = Gtk.Dialog(
+            title="Auryn Diagnostics",
+            transient_for=self.window,
+            modal=True,
+        )
+        dlg.add_button("Close", Gtk.ResponseType.CLOSE)
+        dlg.set_default_size(720, 480)
+
+        text_view = Gtk.TextView()
+        text_view.set_editable(False)
+        text_view.set_cursor_visible(False)
+        text_view.set_monospace(True)
+        text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        text_view.get_buffer().set_text(output)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_hexpand(True)
+        scrolled.set_vexpand(True)
+        scrolled.add(text_view)
+
+        content = dlg.get_content_area()
+        content.set_border_width(8)
+        content.pack_start(scrolled, True, True, 0)
+        content.show_all()
+
+        dlg.run()
         dlg.destroy()
 
     def _show_about(self, *_):
