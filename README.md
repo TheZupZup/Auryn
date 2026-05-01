@@ -172,6 +172,7 @@ Make sure `rip --version` works from the same shell before launching Auryn.
 - GTK installation may require MSYS2 or another PyGObject-compatible setup; follow the official PyGObject Windows instructions to get `gi` importable from your Python environment.
 - On Windows, downloads run through a pipe-based subprocess path instead of the PTY-based path used on Linux. Output capture and progress parsing may behave slightly differently.
 - Issues and PRs are welcome, especially for Windows packaging improvements (installers, GTK bundling, CI).
+- Planned packaging approach: see [docs/windows-packaging.md](docs/windows-packaging.md).
 
 ---
 
