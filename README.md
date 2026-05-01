@@ -206,6 +206,16 @@ python src/Auryn.py --doctor
 
 The command prints a status line for each check. If a check fails, `--doctor` exits immediately with a non-zero exit code; subsequent checks are not run. A clean environment exits with code `0`.
 
+#### Verbose mode
+
+Pass `--verbose` (or the short form `-v`) alongside `--doctor` to include extra diagnostic details with each check:
+
+```bash
+python src/Auryn.py --doctor --verbose
+```
+
+In verbose mode the report additionally includes the active Python executable, the host platform, the resolved `rip` path (or the directories searched when it is not found), the streamrip configuration path, and the default download folder. Use this when filing bug reports or diagnosing environment-specific issues.
+
 ---
 
 ## Project Status
