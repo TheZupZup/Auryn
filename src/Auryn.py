@@ -185,8 +185,23 @@ def open_in_file_manager(path):
         subprocess.Popen(["xdg-open", path])
 
 
-def run_doctor():
+def run_doctor(verbose=False):
     """Fail-fast environment check; prints only the first problem found."""
+    rip_search_paths = [
+        os.path.expanduser("~/.local/bin/rip"),
+        "/usr/local/bin/rip",
+        "/usr/bin/rip",
+    ]
+    cfg_path = os.path.join(resolve_config_dir(), "config.toml")
+    folder = os.path.expanduser("~/Music")
+
+    if verbose:
+        print(f"INFO  Python version: {sys.version.split()[0]}")
+        print(f"INFO  Python executable: {sys.executable}")
+        print(f"INFO  Platform: {platform.platform()}")
+        print(f"INFO  streamrip config path: {cfg_path}")
+        print(f"INFO  Default download folder: {folder}")
+
     if sys.version_info < (3, 8):
         print(f"FAIL  Python >= 3.8 required (found {sys.version.split()[0]})")
         return False
@@ -201,24 +216,25 @@ def run_doctor():
 
     rip_path = shutil.which("rip")
     if not rip_path:
-        for _c in [
-            os.path.expanduser("~/.local/bin/rip"),
-            "/usr/local/bin/rip",
-            "/usr/bin/rip",
-        ]:
+        for _c in rip_search_paths:
             if os.path.isfile(_c):
                 rip_path = _c
                 break
     if not rip_path:
         print("FAIL  streamrip (rip) not found in PATH or common locations.")
+        if verbose:
+            print("INFO  Paths searched for rip:")
+            print("        $PATH (via shutil.which)")
+            for _c in rip_search_paths:
+                print(f"        {_c}")
         return False
+    if verbose:
+        print(f"INFO  rip found at: {rip_path}")
 
-    cfg_path = os.path.join(resolve_config_dir(), "config.toml")
     if not os.path.exists(cfg_path):
         print(f"FAIL  streamrip config not found: {cfg_path}  (run: rip config reset)")
         return False
 
-    folder = os.path.expanduser("~/Music")
     try:
         os.makedirs(folder, exist_ok=True)
         with tempfile.NamedTemporaryFile(dir=folder, delete=True):
@@ -1180,7 +1196,8 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     if "--doctor" in sys.argv:
-        raise SystemExit(0 if run_doctor() else 1)
+        verbose = "--verbose" in sys.argv or "-v" in sys.argv
+        raise SystemExit(0 if run_doctor(verbose=verbose) else 1)
 
     _import_gtk()
     app = AurynApp()
