@@ -176,6 +176,38 @@ Make sure `rip --version` works from the same shell before launching Auryn.
 
 ---
 
+## Troubleshooting
+
+Auryn ships two diagnostic flags to help verify your installation before launching the GUI.
+
+### --version
+
+Prints the application version and exits.
+
+```bash
+python src/Auryn.py --version
+```
+
+### --doctor
+
+Runs a series of preflight checks and reports the result of each one:
+
+| Check | What is verified |
+|---|---|
+| Python | Version meets the minimum requirement |
+| GTK / PyGObject | The `gi` module and GTK 3 bindings are importable |
+| streamrip / rip | The `rip` executable is present on `PATH` |
+| streamrip config | A streamrip configuration file exists |
+| Music folder | The default output directory (`~/Music`) is accessible |
+
+```bash
+python src/Auryn.py --doctor
+```
+
+The command prints a status line for each check. If a check fails, `--doctor` exits immediately with a non-zero exit code; subsequent checks are not run. A clean environment exits with code `0`.
+
+---
+
 ## Project Status
 
 This is an actively developed project.
