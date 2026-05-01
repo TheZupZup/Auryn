@@ -8,6 +8,7 @@ UI chargée depuis Auryn.ui (Glade)
 
 import os
 import re
+import shutil
 import threading
 import subprocess
 import urllib.request
@@ -154,6 +155,28 @@ def resolve_config_dir():
 def toml_escape(value):
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
+
+def resolve_auryn_data_dir():
+    if IS_WINDOWS:
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        return os.path.join(base, "Auryn")
+    return os.path.expanduser("~/.config/Auryn")
+
+
+def resolve_log_dir():
+    if IS_WINDOWS:
+        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        return os.path.join(base, "Auryn", "logs")
+    return os.path.expanduser("~/.local/state/Auryn")
+
+
+def open_in_file_manager(path):
+    if IS_WINDOWS:
+        os.startfile(path)
+    elif IS_MACOS:
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -308,12 +331,12 @@ class AurynApp:
 
     def _open_folder(self, *_):
         os.makedirs(self._dest_folder, exist_ok=True)
-        subprocess.Popen(["xdg-open", self._dest_folder])
+        open_in_file_manager(self._dest_folder)
 
     def _open_log_folder(self, *_):
-        log_dir = os.path.expanduser("~/.local/state/Auryn")
+        log_dir = resolve_log_dir()
         os.makedirs(log_dir, exist_ok=True)
-        subprocess.Popen(["xdg-open", log_dir])
+        open_in_file_manager(log_dir)
 
     # ── Download ─────────────────────────────────────────────────────────────
 
@@ -446,14 +469,9 @@ class AurynApp:
         ]:
             if os.path.isfile(candidate):
                 return candidate
-        try:
-            result = subprocess.run(["which", "rip"], capture_output=True, text=True)
-            if result.returncode == 0:
-                found = result.stdout.strip()
-                if found:
-                    return found
-        except Exception:
-            pass
+        found = shutil.which("rip")
+        if found:
+            return found
         return None
 
     def _check_dest_writable(self):
@@ -551,7 +569,7 @@ class AurynApp:
             GLib.idle_add(self._log, f"⚠  Config update error: {e}\n", "error")
 
     def _apply_stored_credentials(self, cfg):
-        acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
+        acc_path = os.path.join(resolve_auryn_data_dir(), "accounts.json")
         if not os.path.exists(acc_path):
             return
 
@@ -902,7 +920,7 @@ class AurynApp:
             _row[0] += 1
 
         acc = {}
-        acc_path = os.path.expanduser("~/.config/Auryn/accounts.json")
+        acc_path = os.path.join(resolve_auryn_data_dir(), "accounts.json")
         if os.path.exists(acc_path):
             try:
                 with open(acc_path, 'r', encoding="utf-8") as f:
