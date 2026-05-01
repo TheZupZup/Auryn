@@ -1159,6 +1159,7 @@ class AurynApp:
             modal=True,
         )
         copy_btn = dlg.add_button("Copy", 1)
+        save_btn = dlg.add_button("Save", 2)
         dlg.add_button("Close", Gtk.ResponseType.CLOSE)
         dlg.set_default_size(720, 480)
 
@@ -1167,7 +1168,41 @@ class AurynApp:
             clipboard.set_text(output, -1)
             clipboard.store()
 
+        def _on_save(_btn):
+            chooser = Gtk.FileChooserDialog(
+                title="Save Diagnostics",
+                transient_for=dlg,
+                action=Gtk.FileChooserAction.SAVE,
+            )
+            chooser.add_buttons(
+                "Cancel", Gtk.ResponseType.CANCEL,
+                "Save", Gtk.ResponseType.ACCEPT,
+            )
+            chooser.set_current_name("auryn_diagnostics.txt")
+            chooser.set_do_overwrite_confirmation(True)
+            try:
+                if chooser.run() == Gtk.ResponseType.ACCEPT:
+                    path = chooser.get_filename()
+                    if path:
+                        try:
+                            with open(path, "w", encoding="utf-8") as f:
+                                f.write(output)
+                        except OSError as exc:
+                            err = Gtk.MessageDialog(
+                                transient_for=dlg,
+                                modal=True,
+                                message_type=Gtk.MessageType.ERROR,
+                                buttons=Gtk.ButtonsType.OK,
+                                text="Could not save diagnostics",
+                            )
+                            err.format_secondary_text(str(exc))
+                            err.run()
+                            err.destroy()
+            finally:
+                chooser.destroy()
+
         copy_btn.connect("clicked", _on_copy)
+        save_btn.connect("clicked", _on_save)
 
         text_view = Gtk.TextView()
         text_view.set_editable(False)
