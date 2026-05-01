@@ -134,6 +134,47 @@ services:
 2. Run `docker-compose up -d`.
 ---
 
+## Windows experimental
+
+Windows support is experimental. The app has a cross-platform path layer and an experimental Windows runtime path, but GTK/PyGObject on Windows is not trivial to set up and the experience is not as polished as on Linux.
+
+### Requirements
+
+- Python 3.11+
+- [streamrip](https://github.com/nathom/streamrip) installed and available on `PATH` as `rip`
+- GTK 4 and PyGObject installed through a supported Windows method (for example MSYS2, or another PyGObject-compatible environment)
+
+### Basic setup
+
+```bat
+git clone https://github.com/TheZupZup/Auryn.git
+cd Auryn
+
+python -m venv .venv
+.venv\Scripts\activate
+
+pip install -r requirements.txt
+
+:: install streamrip (either inside the venv)
+pip install streamrip
+
+:: ...or as an isolated CLI via pipx
+pipx install streamrip
+
+python src\Auryn.py
+```
+
+Make sure `rip --version` works from the same shell before launching Auryn.
+
+### Notes
+
+- Windows support is **experimental** and not officially supported yet.
+- GTK installation may require MSYS2 or another PyGObject-compatible setup; follow the official PyGObject Windows instructions to get `gi` importable from your Python environment.
+- On Windows, downloads run through a pipe-based subprocess path instead of the PTY-based path used on Linux. Output capture and progress parsing may behave slightly differently.
+- Issues and PRs are welcome, especially for Windows packaging improvements (installers, GTK bundling, CI).
+
+---
+
 ## Project Status
 
 This is an actively developed project.
