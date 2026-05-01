@@ -463,16 +463,42 @@ class AurynApp:
     # ── Lancement streamrip ───────────────────────────────────────────────────
 
     def _find_rip_path(self):
-        for candidate in [
-            os.path.expanduser("~/.local/bin/rip"),
-            "/usr/local/bin/rip",
-            "/usr/bin/rip",
-        ]:
-            if os.path.isfile(candidate):
-                return candidate
         found = shutil.which("rip")
         if found:
             return found
+
+        if IS_WINDOWS:
+            candidates = []
+            appdata = os.environ.get("APPDATA", "")
+            localappdata = os.environ.get("LOCALAPPDATA", "")
+            userprofile = os.environ.get("USERPROFILE", "")
+
+            if appdata:
+                candidates.append(os.path.join(appdata, "Python", "Scripts", "rip.exe"))
+                candidates.append(os.path.join(appdata, "pipx", "venvs", "streamrip", "Scripts", "rip.exe"))
+            if localappdata:
+                python_root = os.path.join(localappdata, "Programs", "Python")
+                if os.path.isdir(python_root):
+                    for entry in sorted(os.listdir(python_root), reverse=True):
+                        if entry.startswith("Python"):
+                            candidates.append(
+                                os.path.join(python_root, entry, "Scripts", "rip.exe")
+                            )
+            if userprofile:
+                candidates.append(os.path.join(userprofile, ".local", "bin", "rip.exe"))
+
+            for candidate in candidates:
+                if os.path.isfile(candidate):
+                    return candidate
+        else:
+            for candidate in [
+                os.path.expanduser("~/.local/bin/rip"),
+                "/usr/local/bin/rip",
+                "/usr/bin/rip",
+            ]:
+                if os.path.isfile(candidate):
+                    return candidate
+
         return None
 
     def _check_dest_writable(self):
