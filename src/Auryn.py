@@ -514,7 +514,14 @@ class AurynApp:
         issues = []
         rip_path = self._find_rip_path()
         if not rip_path:
-            issues.append("streamrip (rip) is not installed or not in PATH.")
+            if IS_WINDOWS:
+                issues.append(
+                    "streamrip not found — rip.exe must be installed and in PATH. "
+                    "Install via: pipx install streamrip (or: pip install streamrip), "
+                    "then open a new terminal to refresh PATH."
+                )
+            else:
+                issues.append("streamrip (rip) is not installed or not in PATH.")
 
         cfg_path = os.path.join(resolve_config_dir(), "config.toml")
         if not os.path.exists(cfg_path):
@@ -526,7 +533,9 @@ class AurynApp:
                 except Exception:
                     issues.append("Unable to run `rip config reset` automatically.")
             if not os.path.exists(cfg_path):
-                issues.append("streamrip config.toml is missing (run: rip config reset).")
+                issues.append(
+                    f"streamrip config.toml not found at: {cfg_path} — run: rip config reset"
+                )
 
         if not self._check_dest_writable():
             issues.append(f"Destination is not writable: {self._dest_folder}")
@@ -663,10 +672,16 @@ class AurynApp:
         rip_path = self._find_rip_path()
 
         if not rip_path:
-            GLib.idle_add(self._log,
-                "❌  streamrip (rip) not found!\n"
-                "    Install: pipx install streamrip\n"
-                "    Then:    rip config reset\n", "error")
+            if IS_WINDOWS:
+                GLib.idle_add(self._log,
+                    "❌  streamrip not found — rip.exe must be in PATH.\n"
+                    "    Install: pipx install streamrip  (or: pip install streamrip)\n"
+                    "    After install, open a new terminal so PATH is updated.\n", "error")
+            else:
+                GLib.idle_add(self._log,
+                    "❌  streamrip (rip) not found!\n"
+                    "    Install: pipx install streamrip\n"
+                    "    Then:    rip config reset\n", "error")
             GLib.idle_add(self._finish, False)
             return
 
