@@ -28,13 +28,14 @@ IS_UNSUPPORTED_OS = IS_WINDOWS or IS_MACOS
 
 gi = None
 pty = None
-fcntl = None 
+fcntl = None
 
-if not IS_UNSUPPORTED_OS:
-    import gi
+if not IS_WINDOWS:
     import pty
     import fcntl
-    
+
+if not IS_MACOS:
+    import gi
     gi.require_version('Gtk', '3.0')
     gi.require_version('Gdk', '3.0')
     from gi.repository import Gtk, GLib, Gdk, GdkPixbuf, Pango
@@ -645,11 +646,16 @@ class AurynApp:
 
         GLib.idle_add(self._log, f"🔧  Using: {rip_path}\n", "info")
 
-        master_fd, slave_fd = pty.openpty()
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env["TERM"] = "xterm-256color"
         env["FORCE_COLOR"] = "1"
+
+        if IS_WINDOWS:
+            self._run_download_windows(rip_path, url, env)
+            return
+
+        master_fd, slave_fd = pty.openpty()
 
         try:
             self._process = subprocess.Popen(
@@ -713,6 +719,54 @@ class AurynApp:
 
         try:
             os.close(master_fd)
+        except Exception:
+            pass
+
+        self._process.wait()
+        GLib.idle_add(self._finish, self._process.returncode == 0)
+
+    def _run_download_windows(self, rip_path, url, env):
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            self._process = subprocess.Popen(
+                [rip_path, "url", url],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env,
+                creationflags=creation_flags,
+            )
+        except Exception as e:
+            GLib.idle_add(self._log, f"❌  Could not start rip: {e}\n", "error")
+            GLib.idle_add(self._finish, False)
+            return
+
+        GLib.idle_add(self._set_status, "🚀  Downloading...", "info")
+
+        try:
+            for line in self._process.stdout:
+                clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', line)
+                clean = re.sub(r'\x1b\][^\x07]*\x07', '', clean)
+                clean = clean.replace('\r', '')
+                if not clean.strip():
+                    continue
+                if not clean.endswith("\n"):
+                    clean += "\n"
+                GLib.idle_add(self._parse_line, clean)
+                if re.search(r'Track Download Done', clean, re.I):
+                    self._track_done += 1
+                    if self._total_tracks > 0:
+                        GLib.idle_add(self.progress_bar.set_fraction,
+                                      min(self._track_done / self._total_tracks, 1.0))
+                        GLib.idle_add(self._set_status,
+                                      f"💾  Saving files ({self._track_done}/{self._total_tracks})...", "info")
+                    else:
+                        GLib.idle_add(self._set_status, "💾  Saving files...", "info")
+                m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
+                if m:
+                    GLib.idle_add(self.speed_lbl.set_markup,
+                        f'<span foreground="#FF6B35" size="small">⬇  {m.group(1)}  </span>')
         except Exception:
             pass
 
@@ -1025,8 +1079,8 @@ class AurynApp:
 
 
 if __name__ == "__main__":
-    if IS_UNSUPPORTED_OS:
-        print("Auryn is not supported on Windows or macOS yet. Please use Linux for now.")
+    if IS_MACOS:
+        print("Auryn is not supported on macOS yet. Please use Linux or Windows.")
         raise SystemExit(1)
 
     app = AurynApp()
