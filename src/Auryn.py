@@ -171,6 +171,15 @@ def resolve_auryn_data_dir():
     return os.path.expanduser("~/.config/Auryn")
 
 
+def auryn_config_path():
+    return os.path.join(resolve_auryn_data_dir(), "config.json")
+
+
+def is_first_launch():
+    """Return True when no Auryn config file exists yet on disk."""
+    return not os.path.exists(auryn_config_path())
+
+
 def resolve_log_dir():
     if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
@@ -369,6 +378,7 @@ class AurynApp:
         # ── Afficher ──
         self.window.show_all()
         self.btn_stop.hide()
+        self._is_first_launch = is_first_launch()
         GLib.idle_add(self._first_run_health_check)
 
     # ── Qualité ──────────────────────────────────────────────────────────────
