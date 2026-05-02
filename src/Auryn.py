@@ -379,6 +379,8 @@ class AurynApp:
         self.window.show_all()
         self.btn_stop.hide()
         self._is_first_launch = is_first_launch()
+        if self._is_first_launch:
+            GLib.idle_add(self._show_first_launch_welcome)
         GLib.idle_add(self._first_run_health_check)
 
     # ── Qualité ──────────────────────────────────────────────────────────────
@@ -623,6 +625,34 @@ class AurynApp:
             issues.append(f"Destination is not writable: {self._dest_folder}")
 
         return (len(issues) == 0, issues)
+
+    def _show_first_launch_welcome(self):
+        rip_found = shutil.which("rip") is not None
+        body = (
+            "The setup wizard will help you configure:\n"
+            "  • Download folder\n"
+            "  • streamrip credentials & config\n\n"
+        )
+        if rip_found:
+            body += "streamrip (rip) was detected on your system."
+        else:
+            body += (
+                "streamrip (rip) was NOT found.\n"
+                "Install it with:  pip install streamrip"
+            )
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Welcome to Auryn! Let's get you set up.",
+        )
+        dlg.format_secondary_text(body)
+        dlg.add_button("Get Started", Gtk.ResponseType.OK)
+        dlg.run()
+        dlg.destroy()
+        return False
 
     def _first_run_health_check(self):
         ok, issues = self._run_preflight_checks(auto_fix=False)
