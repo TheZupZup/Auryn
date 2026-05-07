@@ -24,7 +24,7 @@ from core.errors import parse_streamrip_error
 from core.status import build_status_markup
 
 APP_NAME = "Auryn"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 
 SYSTEM_NAME = platform.system()
 IS_WINDOWS = SYSTEM_NAME == "Windows"
@@ -410,8 +410,12 @@ class AurynApp:
                         Gtk.STOCK_OPEN,   Gtk.ResponseType.OK)
         if dlg.run() == Gtk.ResponseType.OK:
             self._dest_folder = dlg.get_filename()
+            safe_path = (self._dest_folder
+                         .replace("&", "&amp;")
+                         .replace("<", "&lt;")
+                         .replace(">", "&gt;"))
             self.folder_lbl.set_markup(
-                f'<span foreground="#FF6B35" size="small">📁  {self._dest_folder}</span>')
+                f'<span foreground="#FF6B35" size="small">📁  {safe_path}</span>')
         dlg.destroy()
 
     def _open_folder(self, *_):
@@ -447,8 +451,8 @@ class AurynApp:
         self._track_done       = 0
         self._total_tracks     = 0
         self._last_known_error = None
-        self._set_status("⏳   Fetching album info...", "info")
-        self._set_lyrics('<span foreground="#444444"><i>Lyrics will appear here during download...</i></span>')
+        self._set_status("⏳  Fetching album info...", "info")
+        self._set_lyrics('<span foreground="#555555"><i>Lyrics appear here once a track is identified.</i></span>')
         quality = self._get_quality()
         threading.Thread(target=self._thread_main, args=(url, quality), daemon=True).start()
 
@@ -535,14 +539,14 @@ class AurynApp:
         if pb:
             GLib.idle_add(self.cover_img.set_from_pixbuf, pb)
             GLib.idle_add(self.cover_lbl.set_markup,
-                          '<span foreground="#555555" size="small">Cover Art</span>')
+                          '<span foreground="#888888" size="small" letter_spacing="200">COVER</span>')
 
     def _load_cover(self, cover_url):
         pb = download_cover(cover_url, size=185)
         if pb:
             GLib.idle_add(self.cover_img.set_from_pixbuf, pb)
             GLib.idle_add(self.cover_lbl.set_markup,
-                          '<span foreground="#555555" size="small">Cover Art</span>')
+                          '<span foreground="#888888" size="small" letter_spacing="200">COVER</span>')
 
     # ── Lancement streamrip ───────────────────────────────────────────────────
 
@@ -631,13 +635,13 @@ class AurynApp:
         body = (
             "The setup wizard will help you configure:\n"
             "  • Download folder\n"
-            "  • streamrip credentials & config\n\n"
+            "  • streamrip credentials and config\n\n"
         )
         if rip_found:
             body += "streamrip (rip) was detected on your system."
         else:
             body += (
-                "streamrip (rip) was NOT found.\n"
+                "streamrip (rip) was not found.\n"
                 "Install it with:  pip install streamrip"
             )
 
@@ -646,7 +650,7 @@ class AurynApp:
             flags=0,
             message_type=Gtk.MessageType.INFO,
             buttons=Gtk.ButtonsType.NONE,
-            text="Welcome to Auryn! Let's get you set up.",
+            text="Welcome to Auryn — let's get you set up.",
         )
         dlg.format_secondary_text(body)
         dlg.add_button("Get Started", Gtk.ResponseType.OK)

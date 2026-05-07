@@ -20,7 +20,7 @@
             <child>
               <object class="GtkLabel" id="logo_label">
                 <property name="can-focus">False</property>
-                <property name="label">&lt;span foreground="#FF6B35" size="x-large" weight="bold"&gt; Q&lt;/span&gt;&lt;span foreground="#ffffff" size="x-large" weight="bold"&gt;rip&lt;/span&gt;</property>
+                <property name="label">&lt;span foreground="#FF6B35" size="x-large" weight="bold" letter_spacing="600"&gt; Au&lt;/span&gt;&lt;span foreground="#ffffff" size="x-large" weight="bold" letter_spacing="600"&gt;ryn&lt;/span&gt;</property>
                 <property name="use-markup">True</property>
               </object>
               <packing>
@@ -110,7 +110,7 @@
             </child>
             <child>
               <object class="GtkButton" id="btn_about">
-                <property name="label"> i </property>
+                <property name="label">About</property>
                 <property name="can-focus">False</property>
                 <property name="receives-default">False</property>
                 <style>
@@ -179,7 +179,7 @@
                   <object class="GtkLabel" id="lbl_url">
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label">&lt;span foreground="#666666" size="small"&gt;Source&lt;/span&gt;</property>
+                    <property name="label">&lt;span foreground="#888888" size="small" letter_spacing="200"&gt;SOURCE URL&lt;/span&gt;</property>
                     <property name="use-markup">True</property>
                   </object>
                   <packing>
@@ -192,7 +192,7 @@
                   <object class="GtkEntry" id="url_entry">
                     <property name="name">url_entry</property>
                     <property name="can-focus">False</property>
-                    <property name="placeholder-text">Paste source URL...</property>
+                    <property name="placeholder-text">Paste a Qobuz, Tidal, Deezer, or SoundCloud URL</property>
                   </object>
                   <packing>
                     <property name="expand">False</property>
@@ -338,7 +338,7 @@
                   <object class="GtkLabel" id="folder_lbl">
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label">&lt;span foreground="#404040" size="small"&gt;📁  ~/Files&lt;/span&gt;</property>
+                    <property name="label">&lt;span foreground="#666666" size="small"&gt;📁  ~/Music&lt;/span&gt;</property>
                     <property name="use-markup">True</property>
                   </object>
                   <packing>
@@ -367,7 +367,7 @@
                     <property name="spacing">8</property>
                     <child>
                       <object class="GtkButton" id="btn_download">
-                        <property name="label">Start Process</property>
+                        <property name="label">Start Download</property>
                         <property name="name">btn_download</property>
                         <property name="can-focus">False</property>
                         <property name="receives-default">False</property>
@@ -402,7 +402,7 @@
                   <object class="GtkLabel" id="status_lbl">
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label">&lt;span foreground="#555555" size="small"&gt;Ready.&lt;/span&gt;</property>
+                    <property name="label">&lt;span foreground="#777777" size="small"&gt;Ready — paste a URL to begin.&lt;/span&gt;</property>
                     <property name="use-markup">True</property>
                     <property name="ellipsize">end</property>
                   </object>
@@ -468,7 +468,7 @@
                             <property name="margin-end">10</property>
                             <property name="margin-top">10</property>
                             <property name="margin-bottom">10</property>
-                            <property name="label" translatable="yes">&lt;span foreground="#333333" size="small"&gt;—&lt;/span&gt;</property>
+                            <property name="label" translatable="yes">&lt;span foreground="#555555" size="small"&gt;&lt;i&gt;Lyrics appear here once a track is identified.&lt;/i&gt;&lt;/span&gt;</property>
                             <property name="use-markup">True</property>
                             <property name="wrap">True</property>
                             <property name="wrap-mode">word-char</property>
@@ -530,7 +530,7 @@
                 <child>
                   <object class="GtkLabel" id="cover_lbl">
                     <property name="can-focus">False</property>
-                    <property name="label">&lt;span foreground="#333333" size="small"&gt;Cover Art&lt;/span&gt;</property>
+                    <property name="label">&lt;span foreground="#555555" size="small" letter_spacing="200"&gt;COVER&lt;/span&gt;</property>
                     <property name="use-markup">True</property>
                   </object>
                   <packing>
@@ -796,7 +796,7 @@
               <object class="GtkLabel" id="footer_lbl">
                 <property name="can-focus">False</property>
                 <property name="halign">start</property>
-                <property name="label">&lt;span foreground="#333333" size="small"&gt;  Auryn v0.1.1 — Ready&lt;/span&gt;</property>
+                <property name="label">&lt;span foreground="#444444" size="small"&gt;  Auryn v0.1.1  ·  streamrip GUI&lt;/span&gt;</property>
                 <property name="use-markup">True</property>
               </object>
               <packing>
