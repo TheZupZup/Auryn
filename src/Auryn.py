@@ -293,6 +293,7 @@ class AurynApp:
         self.btn_diagnostics = self.builder.get_object("btn_diagnostics")
         self.btn_choose    = self.builder.get_object("btn_choose_folder")
         self.btn_open      = self.builder.get_object("btn_open_folder")
+        self.btn_open_downloads = self.builder.get_object("btn_open_downloads_folder")
         self.btn_log       = self.builder.get_object("btn_open_log")
         self.cb_clear_cache = self.builder.get_object("cb_clear_cache")
         self.folder_lbl    = self.builder.get_object("folder_lbl")
@@ -339,6 +340,7 @@ class AurynApp:
         self.btn_stop.set_can_focus(True)
         self.btn_choose.set_can_focus(True)
         self.btn_open.set_can_focus(True)
+        self.btn_open_downloads.set_can_focus(True)
         self.btn_log.set_can_focus(True)
         self.btn_about.set_can_focus(True)
         self.btn_setup.set_can_focus(True)
@@ -370,6 +372,7 @@ class AurynApp:
         self.btn_diagnostics.connect("clicked", self._show_diagnostics)
         self.btn_choose.connect("clicked", self._choose_folder)
         self.btn_open.connect("clicked", self._open_folder)
+        self.btn_open_downloads.connect("clicked", self._open_downloads_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
 
         for i, cb in enumerate(self._quality_checks):
@@ -421,6 +424,35 @@ class AurynApp:
     def _open_folder(self, *_):
         os.makedirs(self._dest_folder, exist_ok=True)
         open_in_file_manager(self._dest_folder)
+
+    def _open_downloads_folder(self, *_):
+        folder = self._dest_folder
+        if not folder or not os.path.isdir(folder):
+            self._show_folder_error(
+                "Download folder not found",
+                f"The configured download folder does not exist:\n\n{folder}\n\n"
+                "Choose a destination folder or run a download to create it.",
+            )
+            return
+        try:
+            open_in_file_manager(folder)
+        except OSError as exc:
+            self._show_folder_error(
+                "Could not open download folder",
+                f"{folder}\n\n{exc}",
+            )
+
+    def _show_folder_error(self, title, detail):
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=title,
+        )
+        dlg.format_secondary_text(detail)
+        dlg.run()
+        dlg.destroy()
 
     def _open_log_folder(self, *_):
         log_dir = resolve_log_dir()
