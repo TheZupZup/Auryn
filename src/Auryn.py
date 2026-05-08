@@ -17,6 +17,7 @@ import tempfile
 import platform
 import sys
 import io
+import time
 import contextlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -80,6 +81,8 @@ progressbar trough { background-color: #0d0d0d; border: 1px solid #252525; borde
 progressbar progress { background-color: #FF6B35; border-radius: 3px; min-height: 4px; }
 #footer_bar { background-color: #0a0a0a; border-top: 1px solid #222; padding: 3px 12px; min-height: 22px; }
 separator { background-color: #252525; }
+.history-row { background-color: #0d0d0d; border: 1px solid #1f1f1f; border-radius: 3px; }
+.history-row:hover { border-color: #333; }
 """
 
 QUALITY_LABELS = ["MP3 128", "MP3 320", "FLAC 16/44.1", "FLAC 24/96+", "Max (MQA)"]
@@ -307,6 +310,8 @@ class AurynApp:
         self._scroll       = self.builder.get_object("log_scroll")
         self.notebook      = self.builder.get_object("notebook")
         self.lyrics_label  = self.builder.get_object("lyrics_label")
+        self.history_listbox     = self.builder.get_object("history_listbox")
+        self.history_empty_label = self.builder.get_object("history_empty_label")
 
         # ── Checkbuttons qualité ──
         self._quality_checks = [
@@ -333,6 +338,9 @@ class AurynApp:
         self._track_done       = 0
         self._total_tracks     = 0
         self._last_known_error = None
+        self._download_history     = []
+        self._current_history_entry = None
+        self._dest_dirs_snapshot   = set()
 
         # ── Forcer can-focus sur les widgets interactifs ──
         self.url_entry.set_can_focus(True)
@@ -459,6 +467,170 @@ class AurynApp:
         os.makedirs(log_dir, exist_ok=True)
         open_in_file_manager(log_dir)
 
+    # ── Download History ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _history_escape(text):
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    @staticmethod
+    def _history_status_color(status):
+        return {
+            "Completed":   "#87a556",
+            "Downloading": "#FF6B35",
+            "Failed":      "#e74c3c",
+        }.get(status, "#aaaaaa")
+
+    @staticmethod
+    def _format_history_title(artist, album):
+        artist = (artist or "").strip()
+        album = (album or "").strip()
+        if artist and album:
+            return f"{artist} — {album}"
+        return album or artist or ""
+
+    @staticmethod
+    def _snapshot_dest_dirs(base):
+        try:
+            return {name for name in os.listdir(base)
+                    if os.path.isdir(os.path.join(base, name))}
+        except OSError:
+            return set()
+
+    @staticmethod
+    def _detect_new_folder(base, snapshot):
+        """Return absolute path of the most recent newly-created subdir, or None."""
+        try:
+            current = AurynApp._snapshot_dest_dirs(base)
+            new_names = current - snapshot
+            if not new_names:
+                return None
+            candidates = [os.path.join(base, n) for n in new_names]
+            return max(candidates, key=lambda p: os.path.getmtime(p))
+        except OSError:
+            return None
+
+    def _history_add_entry(self, url):
+        entry = {
+            "url": url,
+            "title": "",
+            "status": "Downloading",
+            "timestamp": time.strftime("%H:%M:%S"),
+            "folder": None,
+        }
+        self._download_history.insert(0, entry)
+        self._history_render()
+        return entry
+
+    def _history_set_title(self, entry, title):
+        if entry is None or not title:
+            return
+        if entry.get("title") == title:
+            return
+        entry["title"] = title
+        self._history_render()
+
+    def _history_set_status(self, entry, status, folder=None):
+        if entry is None:
+            return
+        entry["status"] = status
+        if folder:
+            entry["folder"] = folder
+        self._history_render()
+
+    def _history_render(self):
+        for child in self.history_listbox.get_children():
+            self.history_listbox.remove(child)
+
+        if not self._download_history:
+            self.history_empty_label.show()
+            return
+
+        self.history_empty_label.hide()
+        for entry in self._download_history:
+            self.history_listbox.add(self._history_create_row(entry))
+        self.history_listbox.show_all()
+
+    def _history_create_row(self, entry):
+        row = Gtk.ListBoxRow()
+        row.set_can_focus(False)
+        row.get_style_context().add_class("history-row")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        left.set_hexpand(True)
+
+        title_text = entry["title"] or entry["url"]
+        title_lbl = Gtk.Label()
+        title_lbl.set_halign(Gtk.Align.START)
+        title_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        title_lbl.set_max_width_chars(60)
+        title_lbl.set_markup(
+            f'<span foreground="#e8e8e8" size="small">{self._history_escape(title_text)}</span>'
+        )
+        left.pack_start(title_lbl, False, False, 0)
+
+        if entry["title"]:
+            url_lbl = Gtk.Label()
+            url_lbl.set_halign(Gtk.Align.START)
+            url_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            url_lbl.set_max_width_chars(60)
+            url_lbl.set_markup(
+                f'<span foreground="#666666" size="x-small">{self._history_escape(entry["url"])}</span>'
+            )
+            left.pack_start(url_lbl, False, False, 0)
+
+        info_lbl = Gtk.Label()
+        info_lbl.set_halign(Gtk.Align.START)
+        status_color = self._history_status_color(entry["status"])
+        meta_parts = [
+            f'<span foreground="{status_color}" size="small" weight="bold">{entry["status"]}</span>',
+            f'<span foreground="#555555" size="x-small">  ·  {entry["timestamp"]}</span>',
+        ]
+        if entry.get("folder"):
+            meta_parts.append(
+                f'<span foreground="#555555" size="x-small">  ·  {self._history_escape(entry["folder"])}</span>'
+            )
+        info_lbl.set_markup("".join(meta_parts))
+        info_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        info_lbl.set_max_width_chars(80)
+        left.pack_start(info_lbl, False, False, 0)
+
+        box.pack_start(left, True, True, 0)
+
+        if entry["status"] == "Completed":
+            btn = Gtk.Button(label="Open Folder")
+            btn.get_style_context().add_class("neutral-btn")
+            btn.set_valign(Gtk.Align.CENTER)
+            btn.connect("clicked", self._history_open_entry_folder, entry)
+            box.pack_end(btn, False, False, 0)
+
+        row.add(box)
+        return row
+
+    def _history_open_entry_folder(self, _button, entry):
+        folder = entry.get("folder")
+        if not folder or not os.path.isdir(folder):
+            self._show_folder_error(
+                "Folder not found",
+                "The download folder is no longer available:\n\n"
+                f"{folder or '(unknown)'}\n\n"
+                "It may have been moved or deleted since the download finished.",
+            )
+            return
+        try:
+            open_in_file_manager(folder)
+        except OSError as exc:
+            self._show_folder_error(
+                "Could not open folder",
+                f"{folder}\n\n{exc}",
+            )
+
     # ── Download ─────────────────────────────────────────────────────────────
 
     def _on_download(self, *_):
@@ -474,6 +646,8 @@ class AurynApp:
                 self._log(f"   • {issue}\n", "error")
             return
         os.makedirs(self._dest_folder, exist_ok=True)
+        self._dest_dirs_snapshot    = self._snapshot_dest_dirs(self._dest_folder)
+        self._current_history_entry = self._history_add_entry(url)
         self.btn_download.set_sensitive(False)
         self.btn_stop.show()
         self.btn_stop.set_sensitive(True)
@@ -527,12 +701,15 @@ class AurynApp:
             if value:
                 txt = str(value).strip()[:28].replace("&","&amp;").replace("<","&lt;")
                 self._meta[key].set_markup(f'<span foreground="#e8e8e8" size="small">{txt}</span>')
-        sm("Album Artist",  data.get("artist", {}).get("name", ""))
-        sm("Album",         data.get("title", ""))
+        artist = data.get("artist", {}).get("name", "")
+        album  = data.get("title", "")
+        sm("Album Artist",  artist)
+        sm("Album",         album)
         sm("Total Tracks",  data.get("nb_tracks", ""))
         sm("UPC",           data.get("upc", ""))
         sm("Release Date",  data.get("release_date", ""))
         sm("Album Quality", "FLAC 16-bit / 44.1 kHz")
+        self._history_set_title(self._current_history_entry, self._format_history_title(artist, album))
         cover_url = data.get("cover_xl") or data.get("cover_big") or data.get("cover_medium")
         if cover_url:
             threading.Thread(target=self._load_cover, args=(cover_url,), daemon=True).start()
@@ -543,11 +720,13 @@ class AurynApp:
                 txt = str(value).strip()[:30].replace("&","&amp;").replace("<","&lt;")
                 self._meta[key].set_markup(f'<span foreground="#e8e8e8" size="small">{txt}</span>')
         artist = data.get("artist", {}).get("name", "") or data.get("performer", {}).get("name", "")
+        album  = data.get("title", "")
         sm("Album Artist",  artist)
-        sm("Album",         data.get("title", ""))
+        sm("Album",         album)
         sm("Total Tracks",  data.get("tracks_count", data.get("tracks", {}).get("total", "")))
         sm("UPC",           data.get("upc", ""))
         sm("Release Date",  (data.get("release_date_original") or data.get("released_at") or "")[:10])
+        self._history_set_title(self._current_history_entry, self._format_history_title(artist, album))
         max_q = data.get("maximum_sampling_rate", 0)
         max_b = data.get("maximum_bit_depth", 0)
         if max_q and max_b:
@@ -1054,12 +1233,16 @@ class AurynApp:
             self._set_status("✅  Download complete!", "ok")
             self.progress_bar.set_fraction(1.0)
             self._log("\n✅  All downloads finished!\n", "ok")
+            folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot) or self._dest_folder
+            self._history_set_status(self._current_history_entry, "Completed", folder=folder)
         else:
             code = self._process.returncode if self._process else -1
             if code != -15:
                 status_msg = self._last_known_error or "❌  Download failed — check the log."
                 self._set_status(status_msg, "error")
                 self._log("\n❌  Download failed.\n", "error")
+            self._history_set_status(self._current_history_entry, "Failed")
+        self._current_history_entry = None
         self.btn_download.set_sensitive(True)
         self.btn_stop.hide()
         self.speed_lbl.set_markup("")
