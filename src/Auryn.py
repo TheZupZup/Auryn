@@ -312,6 +312,10 @@ class AurynApp:
         self.lyrics_label  = self.builder.get_object("lyrics_label")
         self.history_listbox     = self.builder.get_object("history_listbox")
         self.history_empty_label = self.builder.get_object("history_empty_label")
+        self.btn_add_queue       = self.builder.get_object("btn_add_queue")
+        self.btn_clear_queue     = self.builder.get_object("btn_clear_queue")
+        self.queue_listbox       = self.builder.get_object("queue_listbox")
+        self.queue_empty_label   = self.builder.get_object("queue_empty_label")
 
         # ── Checkbuttons qualité ──
         self._quality_checks = [
@@ -341,6 +345,10 @@ class AurynApp:
         self._download_history     = []
         self._current_history_entry = None
         self._dest_dirs_snapshot   = set()
+        self._queue                 = []
+        self._current_queue_item    = None
+        self._queue_seq             = 0
+        self._queue_stopped_by_user = False
 
         # ── Forcer can-focus sur les widgets interactifs ──
         self.url_entry.set_can_focus(True)
@@ -354,6 +362,8 @@ class AurynApp:
         self.btn_setup.set_can_focus(True)
         self.btn_credentials.set_can_focus(True)
         self.btn_diagnostics.set_can_focus(True)
+        self.btn_add_queue.set_can_focus(True)
+        self.btn_clear_queue.set_can_focus(True)
         self.cb_clear_cache.set_can_focus(True)
         for cb in self._quality_checks:
             cb.set_can_focus(True)
@@ -382,6 +392,8 @@ class AurynApp:
         self.btn_open.connect("clicked", self._open_folder)
         self.btn_open_downloads.connect("clicked", self._open_downloads_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
+        self.btn_add_queue.connect("clicked", self._on_add_to_queue)
+        self.btn_clear_queue.connect("clicked", self._on_clear_queue)
 
         for i, cb in enumerate(self._quality_checks):
             cb.connect("toggled", self._on_quality_toggled, i)
@@ -631,6 +643,150 @@ class AurynApp:
                 f"{folder}\n\n{exc}",
             )
 
+    # ── Download Queue ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _queue_status_color(status):
+        return {
+            "Queued":      "#888888",
+            "Downloading": "#FF6B35",
+            "Completed":   "#87a556",
+            "Failed":      "#e74c3c",
+        }.get(status, "#aaaaaa")
+
+    def _is_downloading(self):
+        return self._process is not None and self._process.poll() is None
+
+    def _on_add_to_queue(self, *_):
+        url = self.url_entry.get_text().strip()
+        if not url:
+            self._set_status("⚠   Paste a URL before queueing.", "error")
+            return
+        self._queue_enqueue_url(url)
+        self.url_entry.set_text("")
+        if not self._is_downloading():
+            self._queue_start_next()
+
+    def _queue_enqueue_url(self, url):
+        item = {
+            "id": self._queue_seq,
+            "url": url,
+            "title": "",
+            "status": "Queued",
+        }
+        self._queue_seq += 1
+        self._queue.append(item)
+        self._queue_render()
+
+    def _queue_set_status(self, item, status):
+        if item is None:
+            return
+        item["status"] = status
+        self._queue_render()
+
+    def _queue_set_title(self, item, title):
+        if item is None or not title:
+            return
+        if item.get("title") == title:
+            return
+        item["title"] = title
+        self._queue_render()
+
+    def _queue_first_pending(self):
+        for item in self._queue:
+            if item["status"] == "Queued":
+                return item
+        return None
+
+    def _queue_start_next(self):
+        item = self._queue_first_pending()
+        if item is None:
+            return
+        item["status"] = "Downloading"
+        self._current_queue_item = item
+        self._queue_render()
+        self._begin_download(item["url"])
+
+    def _on_clear_queue(self, *_):
+        self._queue = [it for it in self._queue if it["status"] == "Downloading"]
+        self._queue_render()
+
+    def _on_remove_queue_item(self, _btn, item):
+        if item.get("status") == "Downloading":
+            return
+        if item in self._queue:
+            self._queue.remove(item)
+            self._queue_render()
+
+    def _queue_render(self):
+        for child in self.queue_listbox.get_children():
+            self.queue_listbox.remove(child)
+        if not self._queue:
+            self.queue_empty_label.show()
+            self.btn_clear_queue.set_sensitive(False)
+            return
+        self.queue_empty_label.hide()
+        self.btn_clear_queue.set_sensitive(
+            any(it["status"] != "Downloading" for it in self._queue)
+        )
+        for item in self._queue:
+            self.queue_listbox.add(self._queue_create_row(item))
+        self.queue_listbox.show_all()
+
+    def _queue_create_row(self, item):
+        row = Gtk.ListBoxRow()
+        row.set_can_focus(False)
+        row.get_style_context().add_class("history-row")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        left.set_hexpand(True)
+
+        title_text = item["title"] or item["url"]
+        title_lbl = Gtk.Label()
+        title_lbl.set_halign(Gtk.Align.START)
+        title_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        title_lbl.set_max_width_chars(60)
+        title_lbl.set_markup(
+            f'<span foreground="#e8e8e8" size="small">{self._history_escape(title_text)}</span>'
+        )
+        left.pack_start(title_lbl, False, False, 0)
+
+        if item["title"]:
+            url_lbl = Gtk.Label()
+            url_lbl.set_halign(Gtk.Align.START)
+            url_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            url_lbl.set_max_width_chars(60)
+            url_lbl.set_markup(
+                f'<span foreground="#666666" size="x-small">{self._history_escape(item["url"])}</span>'
+            )
+            left.pack_start(url_lbl, False, False, 0)
+
+        status_color = self._queue_status_color(item["status"])
+        info_lbl = Gtk.Label()
+        info_lbl.set_halign(Gtk.Align.START)
+        info_lbl.set_markup(
+            f'<span foreground="{status_color}" size="small" weight="bold">{item["status"]}</span>'
+        )
+        left.pack_start(info_lbl, False, False, 0)
+
+        box.pack_start(left, True, True, 0)
+
+        if item["status"] == "Queued":
+            btn = Gtk.Button(label="Remove")
+            btn.get_style_context().add_class("neutral-btn")
+            btn.set_valign(Gtk.Align.CENTER)
+            btn.connect("clicked", self._on_remove_queue_item, item)
+            box.pack_end(btn, False, False, 0)
+
+        row.add(box)
+        return row
+
     # ── Download ─────────────────────────────────────────────────────────────
 
     def _on_download(self, *_):
@@ -638,12 +794,18 @@ class AurynApp:
         if not url:
             self._set_status("⚠   Please paste a URL first.", "error")
             return
+        self._begin_download(url)
+
+    def _begin_download(self, url):
         ok, issues = self._run_preflight_checks(auto_fix=False)
         if not ok:
             self._set_status("❌  Setup issue detected — open Setup.", "error")
             self._log("❌  Preflight checks failed:\n", "error")
             for issue in issues:
                 self._log(f"   • {issue}\n", "error")
+            if self._current_queue_item is not None:
+                self._queue_set_status(self._current_queue_item, "Failed")
+                self._current_queue_item = None
             return
         os.makedirs(self._dest_folder, exist_ok=True)
         self._dest_dirs_snapshot    = self._snapshot_dest_dirs(self._dest_folder)
@@ -663,6 +825,7 @@ class AurynApp:
         threading.Thread(target=self._thread_main, args=(url, quality), daemon=True).start()
 
     def _on_stop(self, *_):
+        self._queue_stopped_by_user = True
         if self._process and self._process.poll() is None:
             self._process.terminate()
             self._log("⏹   Download stopped by user.\n", "error")
@@ -709,7 +872,9 @@ class AurynApp:
         sm("UPC",           data.get("upc", ""))
         sm("Release Date",  data.get("release_date", ""))
         sm("Album Quality", "FLAC 16-bit / 44.1 kHz")
-        self._history_set_title(self._current_history_entry, self._format_history_title(artist, album))
+        title = self._format_history_title(artist, album)
+        self._history_set_title(self._current_history_entry, title)
+        self._queue_set_title(self._current_queue_item, title)
         cover_url = data.get("cover_xl") or data.get("cover_big") or data.get("cover_medium")
         if cover_url:
             threading.Thread(target=self._load_cover, args=(cover_url,), daemon=True).start()
@@ -726,7 +891,9 @@ class AurynApp:
         sm("Total Tracks",  data.get("tracks_count", data.get("tracks", {}).get("total", "")))
         sm("UPC",           data.get("upc", ""))
         sm("Release Date",  (data.get("release_date_original") or data.get("released_at") or "")[:10])
-        self._history_set_title(self._current_history_entry, self._format_history_title(artist, album))
+        title = self._format_history_title(artist, album)
+        self._history_set_title(self._current_history_entry, title)
+        self._queue_set_title(self._current_queue_item, title)
         max_q = data.get("maximum_sampling_rate", 0)
         max_b = data.get("maximum_bit_depth", 0)
         if max_q and max_b:
@@ -1235,6 +1402,7 @@ class AurynApp:
             self._log("\n✅  All downloads finished!\n", "ok")
             folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot) or self._dest_folder
             self._history_set_status(self._current_history_entry, "Completed", folder=folder)
+            self._queue_set_status(self._current_queue_item, "Completed")
         else:
             code = self._process.returncode if self._process else -1
             if code != -15:
@@ -1242,10 +1410,16 @@ class AurynApp:
                 self._set_status(status_msg, "error")
                 self._log("\n❌  Download failed.\n", "error")
             self._history_set_status(self._current_history_entry, "Failed")
+            self._queue_set_status(self._current_queue_item, "Failed")
         self._current_history_entry = None
+        self._current_queue_item    = None
         self.btn_download.set_sensitive(True)
         self.btn_stop.hide()
         self.speed_lbl.set_markup("")
+        if self._queue_stopped_by_user:
+            self._queue_stopped_by_user = False
+        else:
+            self._queue_start_next()
 
     def _log(self, text, tag=None):
         buf = self.log_view.get_buffer()

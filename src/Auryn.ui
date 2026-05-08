@@ -395,6 +395,22 @@
                       </packing>
                     </child>
                     <child>
+                      <object class="GtkButton" id="btn_add_queue">
+                        <property name="label">Add to Queue</property>
+                        <property name="tooltip-text">Add the URL above to the download queue</property>
+                        <property name="can-focus">False</property>
+                        <property name="receives-default">False</property>
+                        <style>
+                          <class name="neutral-btn"/>
+                        </style>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">False</property>
+                        <property name="position">1</property>
+                      </packing>
+                    </child>
+                    <child>
                       <object class="GtkButton" id="btn_stop">
                         <property name="label">⏹   Stop</property>
                         <property name="name">btn_stop</property>
@@ -404,7 +420,7 @@
                       <packing>
                         <property name="expand">False</property>
                         <property name="fill">False</property>
-                        <property name="position">1</property>
+                        <property name="position">2</property>
                       </packing>
                     </child>
                   </object>
@@ -568,6 +584,114 @@
                       </object>
                       <packing>
                         <property name="position">2</property>
+                        <property name="tab-fill">False</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkScrolledWindow" id="queue_scroll">
+                        <property name="name">log_scroll</property>
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="hscrollbar-policy">never</property>
+                        <child>
+                          <object class="GtkBox" id="queue_container">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="orientation">vertical</property>
+                            <property name="margin-start">8</property>
+                            <property name="margin-end">8</property>
+                            <property name="margin-top">8</property>
+                            <property name="margin-bottom">8</property>
+                            <property name="spacing">6</property>
+                            <child>
+                              <object class="GtkBox" id="queue_action_row">
+                                <property name="visible">True</property>
+                                <property name="can-focus">False</property>
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkLabel" id="queue_hint_label">
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="halign">start</property>
+                                    <property name="hexpand">True</property>
+                                    <property name="label">&lt;span foreground="#666666" size="small"&gt;Items run sequentially. Add URLs from the box above.&lt;/span&gt;</property>
+                                    <property name="use-markup">True</property>
+                                  </object>
+                                  <packing>
+                                    <property name="expand">True</property>
+                                    <property name="fill">True</property>
+                                    <property name="position">0</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkButton" id="btn_clear_queue">
+                                    <property name="label">Clear Queue</property>
+                                    <property name="tooltip-text">Remove all queued items (not the one currently downloading)</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="receives-default">False</property>
+                                    <property name="sensitive">False</property>
+                                    <style>
+                                      <class name="neutral-btn"/>
+                                    </style>
+                                  </object>
+                                  <packing>
+                                    <property name="expand">False</property>
+                                    <property name="fill">False</property>
+                                    <property name="position">1</property>
+                                  </packing>
+                                </child>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="fill">False</property>
+                                <property name="position">0</property>
+                              </packing>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="queue_empty_label">
+                                <property name="visible">True</property>
+                                <property name="can-focus">False</property>
+                                <property name="halign">center</property>
+                                <property name="valign">center</property>
+                                <property name="margin-top">24</property>
+                                <property name="margin-bottom">24</property>
+                                <property name="label">&lt;span foreground="#555555" size="small"&gt;&lt;i&gt;Queue is empty — paste a URL above and click Add to Queue.&lt;/i&gt;&lt;/span&gt;</property>
+                                <property name="use-markup">True</property>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="fill">False</property>
+                                <property name="position">1</property>
+                              </packing>
+                            </child>
+                            <child>
+                              <object class="GtkListBox" id="queue_listbox">
+                                <property name="visible">True</property>
+                                <property name="can-focus">False</property>
+                                <property name="selection-mode">none</property>
+                              </object>
+                              <packing>
+                                <property name="expand">True</property>
+                                <property name="fill">True</property>
+                                <property name="position">2</property>
+                              </packing>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                      <packing>
+                        <property name="position">3</property>
+                      </packing>
+                    </child>
+                    <child type="tab">
+                      <object class="GtkLabel" id="label_tab_queue">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="label" translatable="yes">Queue</property>
+                      </object>
+                      <packing>
+                        <property name="position">3</property>
                         <property name="tab-fill">False</property>
                       </packing>
                     </child>
