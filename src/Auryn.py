@@ -183,6 +183,38 @@ def is_first_launch():
     return not os.path.exists(auryn_config_path())
 
 
+DEFAULT_CONFIG = {
+    "download_folder": os.path.expanduser("~/Music"),
+    "quality_level": 3,
+}
+
+
+def load_config():
+    """Read user preferences from config.json, returning defaults if missing or corrupt."""
+    path = auryn_config_path()
+    if not os.path.exists(path):
+        return dict(DEFAULT_CONFIG)
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return dict(DEFAULT_CONFIG)
+    merged = dict(DEFAULT_CONFIG)
+    if isinstance(data, dict):
+        merged.update(data)
+    return merged
+
+
+def save_config(data):
+    """Persist user preferences to config.json, creating the directory if needed."""
+    path = auryn_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp_path, path)
+
+
 def resolve_log_dir():
     if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
@@ -337,8 +369,9 @@ class AurynApp:
         }
 
         # ── État interne ──
+        self._config           = load_config()
         self._process          = None
-        self._dest_folder      = os.path.expanduser("~/Music")
+        self._dest_folder      = self._config.get("download_folder", os.path.expanduser("~/Music"))
         self._track_done       = 0
         self._total_tracks     = 0
         self._last_known_error = None
@@ -398,6 +431,9 @@ class AurynApp:
         for i, cb in enumerate(self._quality_checks):
             cb.connect("toggled", self._on_quality_toggled, i)
 
+        # ── Restaurer les préférences enregistrées ──
+        self._apply_saved_preferences()
+
         # ── Afficher ──
         self.window.show_all()
         self.btn_stop.hide()
@@ -405,6 +441,37 @@ class AurynApp:
         if self._is_first_launch:
             GLib.idle_add(self._show_first_launch_welcome)
         GLib.idle_add(self._first_run_health_check)
+
+    # ── Préférences ──────────────────────────────────────────────────────────
+
+    def _apply_saved_preferences(self):
+        safe_path = (self._dest_folder
+                     .replace("&", "&amp;")
+                     .replace("<", "&lt;")
+                     .replace(">", "&gt;"))
+        self.folder_lbl.set_markup(
+            f'<span foreground="#FF6B35" size="small">📁  {safe_path}</span>')
+
+        try:
+            quality_idx = int(self._config.get("quality_level", 3))
+        except (TypeError, ValueError):
+            quality_idx = 3
+        if 0 <= quality_idx < len(self._quality_checks):
+            for i, cb in enumerate(self._quality_checks):
+                cb.handler_block_by_func(self._on_quality_toggled)
+                cb.set_active(i == quality_idx)
+                cb.handler_unblock_by_func(self._on_quality_toggled)
+
+    def _persist_preferences(self):
+        self._config["download_folder"] = self._dest_folder
+        for i, cb in enumerate(self._quality_checks):
+            if cb.get_active():
+                self._config["quality_level"] = i
+                break
+        try:
+            save_config(self._config)
+        except OSError as e:
+            GLib.idle_add(self._log, f"⚠  Could not save preferences: {e}\n", "error")
 
     # ── Qualité ──────────────────────────────────────────────────────────────
 
@@ -415,6 +482,7 @@ class AurynApp:
                     cb.handler_block_by_func(self._on_quality_toggled)
                     cb.set_active(False)
                     cb.handler_unblock_by_func(self._on_quality_toggled)
+            self._persist_preferences()
 
     def _get_quality(self):
         for i, cb in enumerate(self._quality_checks):
@@ -439,6 +507,7 @@ class AurynApp:
                          .replace(">", "&gt;"))
             self.folder_lbl.set_markup(
                 f'<span foreground="#FF6B35" size="small">📁  {safe_path}</span>')
+            self._persist_preferences()
         dlg.destroy()
 
     def _open_folder(self, *_):
