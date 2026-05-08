@@ -109,23 +109,6 @@
               </packing>
             </child>
             <child>
-              <object class="GtkButton" id="btn_open_downloads_folder">
-                <property name="label">Open Downloads Folder</property>
-                <property name="tooltip-text">Open the configured download folder in your file manager</property>
-                <property name="can-focus">False</property>
-                <property name="receives-default">False</property>
-                <style>
-                  <class name="neutral-btn"/>
-                </style>
-              </object>
-              <packing>
-                <property name="expand">False</property>
-                <property name="fill">False</property>
-                <property name="pack-type">end</property>
-                <property name="position">10</property>
-              </packing>
-            </child>
-            <child>
               <object class="GtkButton" id="btn_about">
                 <property name="label">About</property>
                 <property name="can-focus">False</property>
@@ -342,6 +325,22 @@
                         <property name="expand">False</property>
                         <property name="fill">False</property>
                         <property name="position">3</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="btn_open_downloads_folder">
+                        <property name="label">Open Downloads Folder</property>
+                        <property name="tooltip-text">Open the configured download folder in your file manager</property>
+                        <property name="can-focus">False</property>
+                        <property name="receives-default">False</property>
+                        <style>
+                          <class name="neutral-btn"/>
+                        </style>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">False</property>
+                        <property name="position">4</property>
                       </packing>
                     </child>
                   </object>
