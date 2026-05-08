@@ -1360,6 +1360,19 @@ if __name__ == "__main__":
 
     if "--doctor" in sys.argv:
         verbose = "--verbose" in sys.argv or "-v" in sys.argv
+        if "--report" in sys.argv:
+            buf_io = io.StringIO()
+            with contextlib.redirect_stdout(buf_io), contextlib.redirect_stderr(buf_io):
+                try:
+                    ok = run_doctor(verbose=verbose)
+                except Exception as exc:
+                    ok = False
+                    print(f"FAIL  Diagnostics raised an exception: {exc}")
+            report_path = os.path.abspath("auryn_diagnostics.txt")
+            with open(report_path, "w", encoding="utf-8") as f:
+                f.write(buf_io.getvalue() or "(no output)")
+            print(f"Diagnostics saved to {report_path}")
+            raise SystemExit(0 if ok else 1)
         raise SystemExit(0 if run_doctor(verbose=verbose) else 1)
 
     _import_gtk()
