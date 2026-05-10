@@ -440,6 +440,7 @@ class AurynApp:
         self._is_first_launch = is_first_launch()
         if self._is_first_launch:
             GLib.idle_add(self._show_first_launch_welcome)
+        GLib.idle_add(self._offer_streamrip_install)
         GLib.idle_add(self._first_run_health_check)
 
     # ── Préférences ──────────────────────────────────────────────────────────
@@ -1103,6 +1104,125 @@ class AurynApp:
         dlg.add_button("Get Started", Gtk.ResponseType.OK)
         dlg.run()
         dlg.destroy()
+        return False
+
+    def _offer_streamrip_install(self):
+        """When `rip` is missing, prompt the user to install streamrip via pip.
+
+        Runs once at startup. Skipping is non-blocking; installing is opt-in
+        and surfaces success or failure clearly. Returns False so GLib.idle_add
+        does not reschedule it.
+        """
+        if self._find_rip_path():
+            return False
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text="streamrip is required",
+        )
+        dlg.format_secondary_text(
+            "Auryn uses the `rip` command from the streamrip package, "
+            "but it was not found on your system.\n\n"
+            "Would you like to install it now? This will run:\n"
+            f"    {sys.executable} -m pip install --user streamrip"
+        )
+        skip_btn = dlg.add_button("Skip", Gtk.ResponseType.CANCEL)
+        install_btn = dlg.add_button("Install streamrip", Gtk.ResponseType.OK)
+        skip_btn.get_style_context().add_class("neutral-btn")
+        install_btn.get_style_context().add_class("neutral-btn")
+        dlg.set_default_response(Gtk.ResponseType.OK)
+
+        response = dlg.run()
+        dlg.destroy()
+
+        if response == Gtk.ResponseType.OK:
+            self._install_streamrip()
+        else:
+            self._log("ℹ  streamrip install skipped — you can install it later "
+                      "via: pip install --user streamrip\n", "info")
+        return False
+
+    def _install_streamrip(self):
+        """Run `pip install --user streamrip` in a worker thread, with a modal
+        progress dialog. Re-checks for `rip` once pip exits."""
+        progress = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Installing streamrip…",
+        )
+        progress.format_secondary_text(
+            "Running: pip install --user streamrip\n\n"
+            "This may take a minute. Please wait."
+        )
+        close_btn = progress.add_button("Close", Gtk.ResponseType.CLOSE)
+        close_btn.get_style_context().add_class("neutral-btn")
+        close_btn.set_sensitive(False)
+        progress.show_all()
+
+        self._log(f"⏳  Installing streamrip via {sys.executable} -m pip "
+                  "install --user streamrip…\n", "info")
+
+        cmd = [sys.executable, "-m", "pip", "install", "--user", "streamrip"]
+
+        def worker():
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True)
+                GLib.idle_add(
+                    self._finish_streamrip_install, progress, close_btn,
+                    proc.returncode, proc.stdout or "", proc.stderr or "",
+                )
+            except Exception as exc:
+                GLib.idle_add(
+                    self._finish_streamrip_install, progress, close_btn,
+                    -1, "", f"Could not launch pip: {exc}",
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+        progress.run()
+        progress.destroy()
+
+    def _finish_streamrip_install(self, progress, close_btn, returncode,
+                                  stdout, stderr):
+        """Update the progress dialog with the pip outcome and re-check rip."""
+        rip_path = self._find_rip_path()
+        success = (returncode == 0) and bool(rip_path)
+
+        if success:
+            progress.set_property("text", "streamrip installed")
+            progress.set_property(
+                "secondary-text",
+                f"`rip` is now available at:\n{rip_path}",
+            )
+            progress.set_property("message-type", Gtk.MessageType.INFO)
+            self._set_status("✅  streamrip installed.", "ok")
+            self._log(f"✅  streamrip installed. rip detected at {rip_path}\n",
+                      "ok")
+        else:
+            if returncode == 0 and not rip_path:
+                detail = ("pip reported success but `rip` was not detected.\n"
+                          "It may have been installed to a folder not on PATH.\n"
+                          "Try opening a new terminal session, or install via "
+                          "pipx instead.")
+            else:
+                tail = (stderr or stdout).strip().splitlines()[-6:]
+                detail = "pip install failed.\n\n" + "\n".join(tail) \
+                    if tail else "pip install failed with no output."
+            progress.set_property("text", "streamrip install failed")
+            progress.set_property("secondary-text", detail)
+            progress.set_property("message-type", Gtk.MessageType.ERROR)
+            self._set_status("❌  streamrip install failed.", "error")
+            self._log("❌  streamrip install failed.\n", "error")
+            for line in detail.splitlines():
+                if line.strip():
+                    self._log(f"   {line}\n", "info")
+
+        close_btn.set_sensitive(True)
+        close_btn.grab_focus()
         return False
 
     def _first_run_health_check(self):
