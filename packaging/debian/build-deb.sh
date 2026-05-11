@@ -69,9 +69,9 @@ chmod 0755 "${PKG_ROOT}/usr/bin/Auryn"
 ln -s Auryn "${PKG_ROOT}/usr/bin/auryn"
 
 # --- Control file ----------------------------------------------------------
-# streamrip is not reliably packaged in Debian/Ubuntu archives. We keep it as
-# a "Recommends" only and document the pip/pipx fallback; Auryn itself
-# detects a missing 'rip' at runtime and offers to install it.
+# streamrip is not packaged in the Debian/Ubuntu archives, so we leave it as a
+# "Recommends" with a note for users to install it via pipx/pip. The package
+# itself only hard-depends on python3 + PyGObject + GTK.
 cat > "${PKG_ROOT}/DEBIAN/control" <<EOF
 Package: ${PKG_NAME}
 Version: ${VERSION}
