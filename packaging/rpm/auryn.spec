@@ -57,6 +57,10 @@ done
 
 # Python sources
 install -m 0644 %{_sourcedir}/src/Auryn.py        %{buildroot}%{_datadir}/auryn/Auryn.py
+# Bake the resolved version into the installed Auryn.py so that
+# `auryn --version` and the About dialog match the package metadata.
+sed -i -E "s|^APP_VERSION\s*=.*|APP_VERSION = \"%{auryn_version}\"|" \
+    %{buildroot}%{_datadir}/auryn/Auryn.py
 install -m 0644 %{_sourcedir}/src/Auryn.ui        %{buildroot}%{_datadir}/auryn/Auryn.ui
 install -m 0644 %{_sourcedir}/src/core/__init__.py %{buildroot}%{_datadir}/auryn/core/__init__.py
 install -m 0644 %{_sourcedir}/src/core/errors.py  %{buildroot}%{_datadir}/auryn/core/errors.py

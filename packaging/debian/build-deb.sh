@@ -43,6 +43,11 @@ done
 
 # Python sources
 install -m 0644 src/Auryn.py "${PKG_ROOT}/usr/share/auryn/Auryn.py"
+# Bake the resolved version into the installed Auryn.py so that
+# `auryn --version` and the About dialog report the same version as the
+# package metadata (especially on tag builds where VERSION comes from the tag).
+sed -i -E "s|^APP_VERSION\s*=.*|APP_VERSION = \"${VERSION}\"|" \
+    "${PKG_ROOT}/usr/share/auryn/Auryn.py"
 install -m 0644 src/Auryn.ui "${PKG_ROOT}/usr/share/auryn/Auryn.ui"
 install -m 0644 src/core/__init__.py "${PKG_ROOT}/usr/share/auryn/core/__init__.py"
 install -m 0644 src/core/errors.py "${PKG_ROOT}/usr/share/auryn/core/errors.py"

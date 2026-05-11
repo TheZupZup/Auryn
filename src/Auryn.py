@@ -1851,7 +1851,7 @@ class AurynApp:
         dlg = Gtk.AboutDialog()
         dlg.set_transient_for(self.window)
         dlg.set_program_name("Auryn")
-        dlg.set_version("v0.1.1")
+        dlg.set_version(f"v{APP_VERSION}")
         dlg.set_comments("GUI wrapper for streamrip\nQobuz • Deezer • Tidal • SoundCloud")
         dlg.set_copyright("© 2025 TheZupZup")
         dlg.set_license_type(Gtk.License.GPL_3_0)
