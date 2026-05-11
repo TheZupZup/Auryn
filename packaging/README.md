@@ -7,6 +7,16 @@ workflow (`.github/workflows/linux-packages.yml`):
 - `.rpm` for Fedora/openSUSE/RHEL (noarch, built with `rpmbuild`)
 - Windows builds live under `packaging/windows/` (separate flow)
 
+## streamrip is not a hard dependency
+
+`streamrip` is **not** packaged reliably across Debian/Ubuntu, Fedora,
+openSUSE, or RHEL, so neither the `.deb` nor the `.rpm` hard-depends on
+it — both list it only as `Recommends:`. When Auryn starts up and the
+`rip` executable is missing from `PATH`, the GUI offers to install
+streamrip for the current user via `pip install --user streamrip`
+(`pipx install streamrip` also works). See
+`_offer_streamrip_install` in `src/Auryn.py`.
+
 ## Single source of truth for the version
 
 The application version is defined **once**, in `src/Auryn.py`:
