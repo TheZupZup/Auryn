@@ -1,0 +1,99 @@
+name: Linux packages
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+
+jobs:
+  # On tag builds we want the package version to match the tag.
+  # Otherwise we read APP_VERSION from src/Auryn.py.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: resolve
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2)"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  build-deb:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev lintian
+
+      - name: Build .deb
+        run: packaging/debian/build-deb.sh "${{ needs.version.outputs.version }}"
+
+      - name: Lint .deb (informational)
+        run: lintian --no-tag-display-limit dist/*.deb || true
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auryn-deb-${{ needs.version.outputs.version }}
+          path: dist/*.deb
+
+  build-rpm:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm rpmlint
+
+      - name: Build .rpm
+        run: packaging/rpm/build-rpm.sh "${{ needs.version.outputs.version }}"
+
+      - name: Lint .rpm (informational)
+        run: rpmlint dist/*.rpm || true
+
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auryn-rpm-${{ needs.version.outputs.version }}
+          path: dist/*.rpm
+
+  release:
+    needs: [version, build-deb, build-rpm]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download .deb
+        uses: actions/download-artifact@v4
+        with:
+          name: auryn-deb-${{ needs.version.outputs.version }}
+          path: dist
+
+      - name: Download .rpm
+        uses: actions/download-artifact@v4
+        with:
+          name: auryn-rpm-${{ needs.version.outputs.version }}
+          path: dist
+
+      - name: Attach packages to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.rpm
