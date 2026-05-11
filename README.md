@@ -1,8 +1,10 @@
 # Auryn
-[![Download](https://img.shields.io/badge/Download-.deb-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
-[![Docker Pulls](https://img.shields.io/docker/pulls/thezupzup/Auryn)](https://hub.docker.com/r/thezupzup/Auryn)
-[![Python](https://img.shields.io/badge/python-3.x-blue?logo=python)](#)
-![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)
+[![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)](https://github.com/TheZupZup/Auryn/actions)
+[![Linux Packages](https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml/badge.svg)](https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml)
+[![Latest Release](https://img.shields.io/github/v/release/TheZupZup/Auryn)](https://github.com/TheZupZup/Auryn/releases/latest)
+[![Download .deb/.rpm](https://img.shields.io/badge/Linux%20Packages-.deb%20%7C%20.rpm-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
+[![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python)](https://www.python.org/)
+[![GTK3](https://img.shields.io/badge/GTK-3-green?logo=gnome)](https://www.gtk.org/)
 
 
 Auryn is a graphical interface for an existing open-source tool. It does not provide, host, or distribute any content.
