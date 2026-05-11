@@ -1,0 +1,203 @@
+name: Linux packages
+
+# Builds Auryn's Linux package formats in a single workflow:
+#   - .deb  (Debian/Ubuntu/Linux Mint, arch: all)        via dpkg-deb
+#   - .rpm  (Fedora/openSUSE/RHEL-style, arch: noarch)   via rpmbuild
+#
+# On every push to main and every PR we build both packages and upload them
+# as workflow artifacts so reviewers can install/test them. On version tags
+# (`v*`) we additionally attach the built packages to the matching GitHub
+# Release.
+#
+# Versioning:
+#   - On a `v<X.Y.Z>` tag, the package version is `<X.Y.Z>`.
+#   - Otherwise we read APP_VERSION from src/Auryn.py.
+#   The resolved version is also baked into the installed Auryn.py so that
+#   `auryn --version` matches the package metadata.
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Resolve package version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: resolve
+        name: Resolve version from tag or APP_VERSION
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2)"
+          fi
+          if [ -z "${VERSION}" ]; then
+            echo "Could not resolve version" >&2
+            exit 1
+          fi
+          echo "Resolved version: ${VERSION}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  build-deb:
+    name: Build .deb (arch all)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev \
+            python3 \
+            lintian
+
+      - name: Sanity-check sources (py_compile)
+        run: python3 -m py_compile src/Auryn.py
+
+      - name: Build .deb
+        run: packaging/debian/build-deb.sh "${{ needs.version.outputs.version }}"
+
+      - name: Inspect built package (dpkg-deb --info)
+        run: |
+          for pkg in dist/*.deb; do
+            echo "::group::dpkg-deb --info ${pkg}"
+            dpkg-deb --info "${pkg}"
+            echo "::endgroup::"
+            echo "::group::dpkg-deb --contents ${pkg}"
+            dpkg-deb --contents "${pkg}"
+            echo "::endgroup::"
+          done
+
+      - name: Verify arch and baked --version
+        run: |
+          pkg="$(ls dist/*.deb | head -n1)"
+          arch="$(dpkg-deb --field "${pkg}" Architecture)"
+          if [ "${arch}" != "all" ]; then
+            echo "Expected Architecture: all, got: ${arch}" >&2
+            exit 1
+          fi
+          # The build script bakes APP_VERSION into the installed Auryn.py.
+          # Extract it from the package and confirm it matches the resolved version.
+          tmp="$(mktemp -d)"
+          dpkg-deb -x "${pkg}" "${tmp}"
+          baked="$(grep -E '^APP_VERSION\s*=' "${tmp}/usr/share/auryn/Auryn.py" \
+                   | head -n1 | cut -d'"' -f2)"
+          want="${{ needs.version.outputs.version }}"
+          if [ "${baked}" != "${want}" ]; then
+            echo "Baked APP_VERSION (${baked}) does not match package version (${want})" >&2
+            exit 1
+          fi
+          echo "OK: .deb Architecture=all, APP_VERSION=${baked}"
+
+      - name: Lint .deb (informational)
+        run: lintian --no-tag-display-limit dist/*.deb || true
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auryn-deb-${{ needs.version.outputs.version }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  build-rpm:
+    name: Build .rpm (noarch)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            rpm \
+            python3 \
+            rpmlint
+
+      - name: Sanity-check sources (py_compile)
+        run: python3 -m py_compile src/Auryn.py
+
+      - name: Build .rpm
+        run: packaging/rpm/build-rpm.sh "${{ needs.version.outputs.version }}"
+
+      - name: Inspect built package (rpm -qip)
+        run: |
+          for pkg in dist/*.rpm; do
+            echo "::group::rpm -qip ${pkg}"
+            rpm -qip "${pkg}"
+            echo "::endgroup::"
+            echo "::group::rpm -qlp ${pkg}"
+            rpm -qlp "${pkg}"
+            echo "::endgroup::"
+          done
+
+      - name: Verify arch and baked --version
+        run: |
+          pkg="$(ls dist/*.rpm | head -n1)"
+          arch="$(rpm -qp --qf '%{ARCH}\n' "${pkg}")"
+          if [ "${arch}" != "noarch" ]; then
+            echo "Expected ARCH: noarch, got: ${arch}" >&2
+            exit 1
+          fi
+          # Extract the bundled Auryn.py from the .rpm and confirm the
+          # baked APP_VERSION matches the resolved package version.
+          tmp="$(mktemp -d)"
+          ( cd "${tmp}" && rpm2cpio "${GITHUB_WORKSPACE}/${pkg}" \
+              | cpio -idm --quiet )
+          baked="$(grep -E '^APP_VERSION\s*=' "${tmp}/usr/share/auryn/Auryn.py" \
+                   | head -n1 | cut -d'"' -f2)"
+          want="${{ needs.version.outputs.version }}"
+          if [ "${baked}" != "${want}" ]; then
+            echo "Baked APP_VERSION (${baked}) does not match package version (${want})" >&2
+            exit 1
+          fi
+          echo "OK: .rpm ARCH=noarch, APP_VERSION=${baked}"
+
+      - name: Lint .rpm (informational)
+        run: rpmlint dist/*.rpm || true
+
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auryn-rpm-${{ needs.version.outputs.version }}
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  release:
+    name: Attach packages to GitHub Release
+    needs: [version, build-deb, build-rpm]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: auryn-deb-${{ needs.version.outputs.version }}
+          path: dist
+
+      - name: Download .rpm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: auryn-rpm-${{ needs.version.outputs.version }}
+          path: dist
+
+      - name: Attach packages to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.rpm
+          fail_on_unmatched_files: true
