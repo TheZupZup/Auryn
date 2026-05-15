@@ -152,11 +152,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=icon_arg,
-    # PyInstaller 6+ defaults onedir collected files into a `_internal/`
-    # subdirectory; "." restores the flat layout this spec, the runtime hook,
-    # and the CI validation all assume (Auryn.ui, assets/, lib/, share/ next
-    # to Auryn.exe). Ignored on PyInstaller <6.
-    contents_directory=".",
 )
 
 coll = COLLECT(
@@ -168,4 +163,12 @@ coll = COLLECT(
     upx=False,
     upx_exclude=[],
     name="Auryn",
+    # PyInstaller 6+ defaults onedir collected files into a `_internal/`
+    # subdirectory; "." restores the flat layout (Auryn.ui, assets/, lib/,
+    # share/ sit next to Auryn.exe). `contents_directory` is a COLLECT
+    # kwarg in PyInstaller >=6 — passing it to EXE silently fails to set
+    # the layout and, in some versions, aborts analysis entirely so no
+    # Auryn.exe is produced. The runtime hook and the CI validation both
+    # support either layout, so this only controls the on-disk shape.
+    contents_directory=".",
 )
