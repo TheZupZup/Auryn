@@ -91,7 +91,7 @@ jobs:
           else
             echo "pacman pyinstaller package unavailable; falling back to pip."
             python -m pip install --upgrade pip
-            python -m pip install pyinstaller
+            python -m pip install --break-system-packages pyinstaller
           fi
 
       - name: Show toolchain versions
@@ -153,24 +153,48 @@ jobs:
           pyinstaller --noconfirm --clean --log-level=INFO \
               packaging/windows/Auryn.spec
 
-      - name: Inspect dist/ after PyInstaller
+      - name: Inspect dist/ and locate Auryn.exe
+        id: inspect_dist
         if: always()
         run: |
           set +e
           echo "--- pyinstaller --version ---"
           pyinstaller --version 2>&1 || true
           echo
+
           echo "--- dist/ tree (depth 5) ---"
           if [ -d dist ]; then
             find dist -maxdepth 5 | sort
             echo
             echo "--- sizes ---"
             du -sh dist 2>/dev/null
-            [ -d dist/Auryn ]                     && du -sh dist/Auryn
-            [ -f dist/Auryn/Auryn.exe ]           && du -h dist/Auryn/Auryn.exe
-            [ -d dist/Auryn/_internal ]           && du -sh dist/Auryn/_internal
           else
             echo "(dist/ does not exist — PyInstaller did not produce any output)"
+          fi
+          echo
+
+          # Discover the actual PyInstaller output path instead of assuming
+          # dist/Auryn/. Different PyInstaller versions, or a spec/version
+          # mismatch, can land the executable at a different location; the
+          # validation and upload steps below need the real path.
+          echo "--- locating Auryn.exe ---"
+          exe_path=""
+          if [ -d dist ]; then
+            exe_path="$(find dist -maxdepth 4 -type f -iname 'Auryn.exe' -print 2>/dev/null | head -n1)"
+          fi
+          if [ -n "$exe_path" ]; then
+            bundle_dir="$(dirname "$exe_path")"
+            echo "Found Auryn.exe : ${exe_path}"
+            echo "Bundle root     : ${bundle_dir}"
+            du -h  "$exe_path"   2>/dev/null
+            du -sh "$bundle_dir" 2>/dev/null
+            [ -d "$bundle_dir/_internal" ] && du -sh "$bundle_dir/_internal"
+            printf 'exe_path=%s\n'   "$exe_path"   >> "$GITHUB_OUTPUT"
+            printf 'bundle_dir=%s\n' "$bundle_dir" >> "$GITHUB_OUTPUT"
+          else
+            echo "Auryn.exe was NOT produced under dist/."
+            printf 'exe_path=\n'   >> "$GITHUB_OUTPUT"
+            printf 'bundle_dir=\n' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate --onedir bundle (best-effort report)
@@ -190,20 +214,32 @@ jobs:
               fail=1
             fi
           }
-          # Auryn.exe is always at the top level of the bundle regardless of
-          # PyInstaller version.
-          check f dist/Auryn/Auryn.exe                  "Auryn.exe"
 
-          # PyInstaller 6+ defaults onedir data into dist/Auryn/_internal/;
-          # older versions (and our spec's `contents_directory="."`) put it
-          # flat under dist/Auryn/. Detect which layout was produced and
-          # validate against that root. Either layout works at runtime
-          # because the GTK runtime hook resolves paths from sys._MEIPASS.
-          if [ -d dist/Auryn/_internal ] && [ ! -f dist/Auryn/Auryn.ui ]; then
-            ROOT=dist/Auryn/_internal
+          EXE_PATH="${{ steps.inspect_dist.outputs.exe_path }}"
+          BUNDLE_DIR="${{ steps.inspect_dist.outputs.bundle_dir }}"
+
+          # No Auryn.exe means PyInstaller didn't produce a bundle at all;
+          # there is nothing to validate. Mark the run as failed and let the
+          # final "Fail job" step surface it.
+          if [ -z "$EXE_PATH" ] || [ -z "$BUNDLE_DIR" ]; then
+            echo "::warning::Auryn.exe was not produced by PyInstaller; skipping bundle layout checks."
+            echo "onedir_failed=1" >> "$GITHUB_OUTPUT"
+            echo "bundle_dir="     >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          check f "$EXE_PATH" "Auryn.exe"
+
+          # PyInstaller 6+ defaults onedir data into <bundle>/_internal/;
+          # the spec's `contents_directory="."` on COLLECT puts it flat under
+          # <bundle>/. Detect which layout PyInstaller actually produced and
+          # validate against it. Either layout works at runtime because the
+          # GTK runtime hook resolves paths from sys._MEIPASS.
+          if [ -d "$BUNDLE_DIR/_internal" ] && [ ! -f "$BUNDLE_DIR/Auryn.ui" ]; then
+            ROOT="$BUNDLE_DIR/_internal"
             echo "Detected PyInstaller _internal/ layout; validating under ${ROOT}/"
           else
-            ROOT=dist/Auryn
+            ROOT="$BUNDLE_DIR"
             echo "Detected flat layout; validating under ${ROOT}/"
           fi
           echo "bundle_root=${ROOT}" >> "$GITHUB_OUTPUT"
@@ -219,17 +255,21 @@ jobs:
           else
             echo "Bundle layout OK."
           fi
-          echo "onedir_failed=${fail}" >> "$GITHUB_OUTPUT"
+          echo "onedir_failed=${fail}"    >> "$GITHUB_OUTPUT"
+          echo "bundle_dir=${BUNDLE_DIR}" >> "$GITHUB_OUTPUT"
 
       - name: Upload --onedir bundle (only if validation passed)
         # Per task contract: do not upload an artifact that failed validation.
         # The source-fallback zip below is always uploaded, so testers still
         # have something to download even on a broken --onedir run.
-        if: ${{ always() && steps.build_onedir.outcome == 'success' && steps.validate.outputs.onedir_failed == '0' && hashFiles('dist/Auryn/Auryn.exe') != '' }}
+        # Upload from the bundle directory discovered by inspect_dist rather
+        # than a hardcoded path, so the artifact always contains the real
+        # Auryn.exe wherever PyInstaller produced it.
+        if: ${{ always() && steps.build_onedir.outcome == 'success' && steps.validate.outputs.onedir_failed == '0' && steps.validate.outputs.bundle_dir != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: auryn-windows-onedir-${{ steps.version.outputs.version }}
-          path: dist/Auryn/
+          path: ${{ steps.validate.outputs.bundle_dir }}/
           if-no-files-found: error
 
       - name: Build source-fallback zip (always)
