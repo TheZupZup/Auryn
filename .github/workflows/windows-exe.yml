@@ -157,14 +157,18 @@ jobs:
         if: always()
         run: |
           set +e
-          echo "--- dist/ tree (depth 3) ---"
+          echo "--- pyinstaller --version ---"
+          pyinstaller --version 2>&1 || true
+          echo
+          echo "--- dist/ tree (depth 5) ---"
           if [ -d dist ]; then
-            find dist -maxdepth 3 | sort
+            find dist -maxdepth 5 | sort
             echo
             echo "--- sizes ---"
             du -sh dist 2>/dev/null
-            [ -d dist/Auryn ]         && du -sh dist/Auryn
-            [ -f dist/Auryn/Auryn.exe ] && du -h dist/Auryn/Auryn.exe
+            [ -d dist/Auryn ]                     && du -sh dist/Auryn
+            [ -f dist/Auryn/Auryn.exe ]           && du -h dist/Auryn/Auryn.exe
+            [ -d dist/Auryn/_internal ]           && du -sh dist/Auryn/_internal
           else
             echo "(dist/ does not exist — PyInstaller did not produce any output)"
           fi
@@ -186,13 +190,30 @@ jobs:
               fail=1
             fi
           }
+          # Auryn.exe is always at the top level of the bundle regardless of
+          # PyInstaller version.
           check f dist/Auryn/Auryn.exe                  "Auryn.exe"
-          check f dist/Auryn/Auryn.ui                   "Auryn.ui"
-          check f dist/Auryn/assets/Auryn.svg           "assets/Auryn.svg"
-          check d dist/Auryn/lib/girepository-1.0       "GTK typelibs"
-          check d dist/Auryn/lib/gdk-pixbuf-2.0         "gdk-pixbuf loaders"
-          check d dist/Auryn/share/icons/Adwaita        "Adwaita icon theme"
-          check d dist/Auryn/share/glib-2.0/schemas     "GSettings schemas"
+
+          # PyInstaller 6+ defaults onedir data into dist/Auryn/_internal/;
+          # older versions (and our spec's `contents_directory="."`) put it
+          # flat under dist/Auryn/. Detect which layout was produced and
+          # validate against that root. Either layout works at runtime
+          # because the GTK runtime hook resolves paths from sys._MEIPASS.
+          if [ -d dist/Auryn/_internal ] && [ ! -f dist/Auryn/Auryn.ui ]; then
+            ROOT=dist/Auryn/_internal
+            echo "Detected PyInstaller _internal/ layout; validating under ${ROOT}/"
+          else
+            ROOT=dist/Auryn
+            echo "Detected flat layout; validating under ${ROOT}/"
+          fi
+          echo "bundle_root=${ROOT}" >> "$GITHUB_OUTPUT"
+
+          check f "${ROOT}/Auryn.ui"                    "Auryn.ui"
+          check f "${ROOT}/assets/Auryn.svg"            "assets/Auryn.svg"
+          check d "${ROOT}/lib/girepository-1.0"        "GTK typelibs"
+          check d "${ROOT}/lib/gdk-pixbuf-2.0"          "gdk-pixbuf loaders"
+          check d "${ROOT}/share/icons/Adwaita"         "Adwaita icon theme"
+          check d "${ROOT}/share/glib-2.0/schemas"      "GSettings schemas"
           if [ "$fail" -ne 0 ]; then
             echo "::warning::One or more expected files are missing from the --onedir bundle."
           else
