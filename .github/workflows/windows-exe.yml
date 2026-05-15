@@ -1,0 +1,137 @@
+name: Windows packaging (experimental)
+
+# Experimental Windows packaging workflow.
+#
+# Builds a portable PyInstaller --onedir bundle (dist/Auryn/) containing
+# Auryn.exe and the GTK3 runtime from MSYS2 MINGW64, then uploads it as a
+# GitHub Actions artifact for manual smoke-testing on Windows.
+#
+# Status: experimental. There is no installer, no code signing, and no
+# auto-update. See docs/windows-packaging.md and
+# packaging/windows/README.md for the full plan.
+#
+# Versioning mirrors the Linux workflow:
+#   - On a v<X.Y.Z> tag, the resolved version is <X.Y.Z>.
+#   - Otherwise we read APP_VERSION from src/Auryn.py.
+# That value is baked into the bundled Auryn.py so `Auryn.exe --version`
+# (and the About dialog) matches the artifact name.
+
+on:
+  push:
+    tags: [ "v*" ]
+  pull_request:
+    paths:
+      - 'packaging/windows/**'
+      - '.github/workflows/windows-exe.yml'
+      - 'src/Auryn.py'
+      - 'src/Auryn.ui'
+      - 'assets/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Auryn.exe (--onedir, experimental)
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2)"
+          fi
+          if [ -z "${VERSION}" ]; then
+            echo "Could not resolve version" >&2
+            exit 1
+          fi
+          echo "Resolved version: ${VERSION}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup MSYS2 (MINGW64) with GTK3 + PyGObject
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-python-pip
+            mingw-w64-x86_64-python-gobject
+            mingw-w64-x86_64-adwaita-icon-theme
+            mingw-w64-x86_64-hicolor-icon-theme
+
+      - name: Install PyInstaller (via pip into MSYS2 MINGW64 Python)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+
+      - name: Sanity-check sources (py_compile)
+        run: python -m py_compile src/Auryn.py
+
+      - name: Bake APP_VERSION into src/Auryn.py
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i -E "s|^APP_VERSION\s*=.*|APP_VERSION = \"${VERSION}\"|" src/Auryn.py
+          baked="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2)"
+          if [ "${baked}" != "${VERSION}" ]; then
+            echo "Bake failed: source reports APP_VERSION=${baked}, want=${VERSION}" >&2
+            exit 1
+          fi
+          echo "OK: src/Auryn.py now reports APP_VERSION=${baked}"
+
+      - name: Show toolchain versions
+        run: |
+          python --version
+          pyinstaller --version
+          pacman -Q mingw-w64-x86_64-gtk3 mingw-w64-x86_64-python-gobject || true
+
+      - name: Build Windows --onedir bundle (PyInstaller)
+        run: |
+          # The spec expects a Windows-style path so pathlib.Path() resolves
+          # correctly under the native MINGW64 Python.
+          export AURYN_MINGW_PREFIX="$(cygpath -m /mingw64)"
+          echo "AURYN_MINGW_PREFIX=${AURYN_MINGW_PREFIX}"
+          pyinstaller --noconfirm --clean packaging/windows/Auryn.spec
+
+      - name: Validate built bundle
+        run: |
+          set -e
+          # Auryn.exe and Auryn's own data files must be present.
+          test -f dist/Auryn/Auryn.exe       || { echo "Auryn.exe not produced" >&2; exit 1; }
+          test -f dist/Auryn/Auryn.ui        || { echo "Auryn.ui not bundled" >&2; exit 1; }
+          test -f dist/Auryn/assets/Auryn.svg \
+              || { echo "assets/Auryn.svg not bundled" >&2; exit 1; }
+          # GTK runtime trees the spec copies in. Missing any of these is a
+          # silent broken-UI bug at runtime, so fail loud here.
+          test -d dist/Auryn/lib/girepository-1.0 \
+              || { echo "GTK typelibs not bundled" >&2; exit 1; }
+          test -d dist/Auryn/lib/gdk-pixbuf-2.0 \
+              || { echo "gdk-pixbuf loaders not bundled" >&2; exit 1; }
+          test -d dist/Auryn/share/icons/Adwaita \
+              || { echo "Adwaita icon theme not bundled" >&2; exit 1; }
+          test -d dist/Auryn/share/glib-2.0/schemas \
+              || { echo "GSettings schemas not bundled" >&2; exit 1; }
+          echo "Bundle layout OK."
+          echo "Sizes:"
+          du -sh dist/Auryn
+          du -sh dist/Auryn/Auryn.exe
+
+      - name: Upload Auryn --onedir bundle as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auryn-windows-x64-${{ steps.version.outputs.version }}
+          path: dist/Auryn/
+          if-no-files-found: error

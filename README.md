@@ -140,6 +140,13 @@ services:
 
 Windows support is experimental. The app has a cross-platform path layer and an experimental Windows runtime path, but GTK/PyGObject on Windows is not trivial to set up and the experience is not as polished as on Linux.
 
+> **Experimental CI build:** the `Windows packaging (experimental)` workflow
+> (`.github/workflows/windows-exe.yml`) builds a portable PyInstaller
+> `--onedir` bundle on `windows-latest` via MSYS2 and uploads `dist/Auryn/`
+> as a downloadable artifact. The Windows build is **experimental** — it is
+> unsigned, has no installer, and **TIDAL / streamrip setup may still
+> require testing** on Windows even when the GUI launches cleanly.
+
 ### Requirements
 
 - Python 3.11+
