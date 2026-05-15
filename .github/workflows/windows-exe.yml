@@ -200,16 +200,16 @@ jobs:
           fi
           echo "onedir_failed=${fail}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload --onedir bundle (if produced)
-        # Only upload if Auryn.exe was actually produced. We don't gate on
-        # full validation here: an incomplete bundle is still useful to
-        # inspect locally, and the next step will fail the job anyway.
-        if: always() && hashFiles('dist/Auryn/Auryn.exe') != ''
+      - name: Upload --onedir bundle (only if validation passed)
+        # Per task contract: do not upload an artifact that failed validation.
+        # The source-fallback zip below is always uploaded, so testers still
+        # have something to download even on a broken --onedir run.
+        if: ${{ always() && steps.build_onedir.outcome == 'success' && steps.validate.outputs.onedir_failed == '0' && hashFiles('dist/Auryn/Auryn.exe') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: auryn-windows-onedir-${{ steps.version.outputs.version }}
           path: dist/Auryn/
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Build source-fallback zip (always)
         if: always()

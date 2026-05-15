@@ -143,6 +143,11 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=icon_arg,
+    # PyInstaller 6+ defaults onedir collected files into a `_internal/`
+    # subdirectory; "." restores the flat layout this spec, the runtime hook,
+    # and the CI validation all assume (Auryn.ui, assets/, lib/, share/ next
+    # to Auryn.exe). Ignored on PyInstaller <6.
+    contents_directory=".",
 )
 
 coll = COLLECT(
