@@ -37,7 +37,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -272,6 +272,27 @@ jobs:
           path: ${{ steps.validate.outputs.bundle_dir }}/
           if-no-files-found: error
 
+      - name: Build --onedir release zip (only if validation passed)
+        # GitHub Releases attach files, not directories. Keep the Actions
+        # artifact as the raw folder above, and create a zip specifically for
+        # tag/release uploads.
+        if: ${{ always() && steps.build_onedir.outcome == 'success' && steps.validate.outputs.onedir_failed == '0' && steps.validate.outputs.bundle_dir != '' }}
+        run: |
+          BUNDLE_DIR="${{ steps.validate.outputs.bundle_dir }}"
+          ZIP_OUT="auryn-windows-onedir-${{ steps.version.outputs.version }}.zip"
+
+          if [ ! -d "${BUNDLE_DIR}" ]; then
+            echo "Bundle directory does not exist: ${BUNDLE_DIR}" >&2
+            exit 1
+          fi
+
+          ROOT_DIR="$(pwd)"
+          PARENT_DIR="$(dirname "${BUNDLE_DIR}")"
+          BUNDLE_NAME="$(basename "${BUNDLE_DIR}")"
+
+          ( cd "${PARENT_DIR}" && zip -qr "${ROOT_DIR}/${ZIP_OUT}" "${BUNDLE_NAME}" )
+          ls -lh "${ZIP_OUT}"
+
       - name: Build source-fallback zip (always)
         if: always()
         # Uses the default msys2 shell so the `zip` we installed via
@@ -337,6 +358,22 @@ jobs:
           name: auryn-windows-source-${{ steps.version.outputs.version }}
           path: auryn-windows-source-${{ steps.version.outputs.version }}.zip
           if-no-files-found: error
+
+      - name: Attach validated Windows bundle to GitHub Release
+        # Only attach the standalone bundle to releases when validation passed.
+        # PR and manual non-tag builds stay artifact-only.
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && steps.build_onedir.outcome == 'success' && steps.validate.outputs.onedir_failed == '0' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: auryn-windows-onedir-${{ steps.version.outputs.version }}.zip
+
+      - name: Attach Windows source fallback to GitHub Release
+        # The fallback is useful for testers even while the standalone Windows
+        # bundle is experimental. This is tag-only and does not affect PR builds.
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: auryn-windows-source-${{ steps.version.outputs.version }}.zip
 
       - name: Fail job if --onedir bundle is unusable
         # Do not fake success. If PyInstaller did not produce a complete
