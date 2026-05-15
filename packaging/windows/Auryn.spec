@@ -56,32 +56,41 @@ datas = [
 # below is something GTK loads at runtime by relative path; missing any of
 # them produces a degraded UI (missing icons, wrong fonts, blank widgets)
 # without an obvious error.
+#
+# Each entry: (source_path, dest_path, required).
+# `required=True` paths abort the build if missing; `required=False` paths
+# print a warning and are skipped, so a slimmer MSYS2 install can still
+# produce a working bundle.
 gtk_data_trees = [
     # GObject introspection typelibs.
-    (MINGW_PREFIX / "lib" / "girepository-1.0", "lib/girepository-1.0"),
+    (MINGW_PREFIX / "lib" / "girepository-1.0", "lib/girepository-1.0", True),
     # gdk-pixbuf image loaders + their cache.
-    (MINGW_PREFIX / "lib" / "gdk-pixbuf-2.0", "lib/gdk-pixbuf-2.0"),
+    (MINGW_PREFIX / "lib" / "gdk-pixbuf-2.0", "lib/gdk-pixbuf-2.0", True),
     # Compiled GSettings schemas.
-    (MINGW_PREFIX / "share" / "glib-2.0" / "schemas", "share/glib-2.0/schemas"),
+    (MINGW_PREFIX / "share" / "glib-2.0" / "schemas", "share/glib-2.0/schemas", True),
     # Adwaita + hicolor icon themes (do not omit; Gtk falls back silently).
-    (MINGW_PREFIX / "share" / "icons" / "Adwaita", "share/icons/Adwaita"),
-    (MINGW_PREFIX / "share" / "icons" / "hicolor", "share/icons/hicolor"),
-    # Locale data for GTK / GLib message catalogs (small but expected).
-    (MINGW_PREFIX / "share" / "locale", "share/locale"),
-    # Fontconfig defaults.
-    (MINGW_PREFIX / "etc" / "fonts", "etc/fonts"),
+    (MINGW_PREFIX / "share" / "icons" / "Adwaita", "share/icons/Adwaita", True),
+    (MINGW_PREFIX / "share" / "icons" / "hicolor", "share/icons/hicolor", True),
+    # Locale data for GTK / GLib message catalogs. Optional: English UI works
+    # without it, and some MSYS2 installs omit it.
+    (MINGW_PREFIX / "share" / "locale", "share/locale", False),
+    # Fontconfig defaults. Optional: GTK falls back to its own font search if
+    # this is missing.
+    (MINGW_PREFIX / "etc" / "fonts", "etc/fonts", False),
 ]
 
-for src, dest in gtk_data_trees:
+for src, dest, required in gtk_data_trees:
     if src.exists():
         datas.append((str(src), dest))
-    else:
+    elif required:
         # Fail loud on the build host rather than ship a broken bundle.
         raise SystemExit(
             f"[Auryn.spec] Required GTK runtime path not found: {src}\n"
             f"Make sure mingw-w64-x86_64-gtk3 is installed and "
             f"AURYN_MINGW_PREFIX points at your MSYS2 MINGW64 root."
         )
+    else:
+        print(f"[Auryn.spec] WARNING: optional GTK runtime path not found, skipping: {src}")
 
 # ---------------------------------------------------------------------------
 # Hidden imports
@@ -143,6 +152,11 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=icon_arg,
+    # PyInstaller 6+ defaults onedir collected files into a `_internal/`
+    # subdirectory; "." restores the flat layout this spec, the runtime hook,
+    # and the CI validation all assume (Auryn.ui, assets/, lib/, share/ next
+    # to Auryn.exe). Ignored on PyInstaller <6.
+    contents_directory=".",
 )
 
 coll = COLLECT(
