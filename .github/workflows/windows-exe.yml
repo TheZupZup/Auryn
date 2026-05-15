@@ -2,19 +2,27 @@ name: Windows packaging (experimental)
 
 # Experimental Windows packaging workflow.
 #
-# Builds a portable PyInstaller --onedir bundle (dist/Auryn/) containing
-# Auryn.exe and the GTK3 runtime from MSYS2 MINGW64, then uploads it as a
-# GitHub Actions artifact for manual smoke-testing on Windows.
+# Best-effort: tries to build a portable PyInstaller --onedir bundle
+# (dist/Auryn/) on windows-latest using GTK3 + PyGObject from MSYS2
+# MINGW64, and uploads it as a downloadable artifact.
 #
-# Status: experimental. There is no installer, no code signing, and no
-# auto-update. See docs/windows-packaging.md and
-# packaging/windows/README.md for the full plan.
+# To keep testers unblocked while the standalone bundle is still being
+# stabilised, the workflow ALSO always produces a source-fallback zip
+# (auryn-windows-source-<version>.zip) containing src/, assets/, the
+# Windows packaging files, and a README explaining how to run Auryn on
+# Windows with a manually installed MSYS2 / GTK3 / PyGObject toolchain.
+#
+# Linux packaging is in a separate workflow (linux-packages.yml) and is
+# not touched by this file.
+#
+# Status: experimental. No installer, no code signing, no auto-update.
+# See docs/windows-packaging.md and packaging/windows/README.md.
 #
 # Versioning mirrors the Linux workflow:
 #   - On a v<X.Y.Z> tag, the resolved version is <X.Y.Z>.
 #   - Otherwise we read APP_VERSION from src/Auryn.py.
-# That value is baked into the bundled Auryn.py so `Auryn.exe --version`
-# (and the About dialog) matches the artifact name.
+# That value is baked into the bundled Auryn.py so the produced artifact
+# reports the matching version.
 
 on:
   push:
@@ -33,7 +41,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Auryn.exe (--onedir, experimental)
+    name: Build Auryn (Windows, experimental)
     runs-on: windows-latest
 
     defaults:
@@ -63,7 +71,9 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
+          # update: false avoids a flaky two-pass pacman -Syu on the runner.
+          # The packages listed below are already on a known revision.
+          update: false
           install: >-
             base-devel
             mingw-w64-x86_64-gtk3
@@ -72,11 +82,49 @@ jobs:
             mingw-w64-x86_64-python-gobject
             mingw-w64-x86_64-adwaita-icon-theme
             mingw-w64-x86_64-hicolor-icon-theme
+            zip
 
-      - name: Install PyInstaller (via pip into MSYS2 MINGW64 Python)
+      - name: Install PyInstaller (pacman, with pip fallback)
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyinstaller
+          if pacman -S --noconfirm --needed mingw-w64-x86_64-python-pyinstaller; then
+            echo "PyInstaller installed via pacman."
+          else
+            echo "pacman pyinstaller package unavailable; falling back to pip."
+            python -m pip install --upgrade pip
+            python -m pip install pyinstaller
+          fi
+
+      - name: Show toolchain versions
+        if: always()
+        run: |
+          set +e
+          python --version
+          pyinstaller --version
+          python -c "import gi; print('gi:', gi.__version__)"
+          pacman -Q mingw-w64-x86_64-gtk3 \
+                    mingw-w64-x86_64-python-gobject \
+                    mingw-w64-x86_64-adwaita-icon-theme \
+                    mingw-w64-x86_64-hicolor-icon-theme
+
+      - name: Inspect MINGW64 GTK runtime paths
+        if: always()
+        run: |
+          # These are the paths the spec expects. If any are missing here,
+          # the spec will raise SystemExit during PyInstaller analysis.
+          set +e
+          for p in /mingw64/lib/girepository-1.0 \
+                   /mingw64/lib/gdk-pixbuf-2.0 \
+                   /mingw64/share/glib-2.0/schemas \
+                   /mingw64/share/icons/Adwaita \
+                   /mingw64/share/icons/hicolor \
+                   /mingw64/share/locale \
+                   /mingw64/etc/fonts; do
+            if [ -e "$p" ]; then
+              printf 'OK      %s\n' "$p"
+            else
+              printf 'MISSING %s\n' "$p"
+            fi
+          done
 
       - name: Sanity-check sources (py_compile)
         run: python -m py_compile src/Auryn.py
@@ -92,46 +140,154 @@ jobs:
           fi
           echo "OK: src/Auryn.py now reports APP_VERSION=${baked}"
 
-      - name: Show toolchain versions
-        run: |
-          python --version
-          pyinstaller --version
-          pacman -Q mingw-w64-x86_64-gtk3 mingw-w64-x86_64-python-gobject || true
-
-      - name: Build Windows --onedir bundle (PyInstaller)
+      - name: Build --onedir bundle with PyInstaller (experimental)
+        id: build_onedir
+        # Allowed to fail: the standalone bundle is the experimental piece.
+        # The source-fallback zip a few steps below is always produced.
+        continue-on-error: true
         run: |
           # The spec expects a Windows-style path so pathlib.Path() resolves
           # correctly under the native MINGW64 Python.
           export AURYN_MINGW_PREFIX="$(cygpath -m /mingw64)"
           echo "AURYN_MINGW_PREFIX=${AURYN_MINGW_PREFIX}"
-          pyinstaller --noconfirm --clean packaging/windows/Auryn.spec
+          pyinstaller --noconfirm --clean --log-level=INFO \
+              packaging/windows/Auryn.spec
 
-      - name: Validate built bundle
+      - name: Inspect dist/ after PyInstaller
+        if: always()
         run: |
-          set -e
-          # Auryn.exe and Auryn's own data files must be present.
-          test -f dist/Auryn/Auryn.exe       || { echo "Auryn.exe not produced" >&2; exit 1; }
-          test -f dist/Auryn/Auryn.ui        || { echo "Auryn.ui not bundled" >&2; exit 1; }
-          test -f dist/Auryn/assets/Auryn.svg \
-              || { echo "assets/Auryn.svg not bundled" >&2; exit 1; }
-          # GTK runtime trees the spec copies in. Missing any of these is a
-          # silent broken-UI bug at runtime, so fail loud here.
-          test -d dist/Auryn/lib/girepository-1.0 \
-              || { echo "GTK typelibs not bundled" >&2; exit 1; }
-          test -d dist/Auryn/lib/gdk-pixbuf-2.0 \
-              || { echo "gdk-pixbuf loaders not bundled" >&2; exit 1; }
-          test -d dist/Auryn/share/icons/Adwaita \
-              || { echo "Adwaita icon theme not bundled" >&2; exit 1; }
-          test -d dist/Auryn/share/glib-2.0/schemas \
-              || { echo "GSettings schemas not bundled" >&2; exit 1; }
-          echo "Bundle layout OK."
-          echo "Sizes:"
-          du -sh dist/Auryn
-          du -sh dist/Auryn/Auryn.exe
+          set +e
+          echo "--- dist/ tree (depth 3) ---"
+          if [ -d dist ]; then
+            find dist -maxdepth 3 | sort
+            echo
+            echo "--- sizes ---"
+            du -sh dist 2>/dev/null
+            [ -d dist/Auryn ]         && du -sh dist/Auryn
+            [ -f dist/Auryn/Auryn.exe ] && du -h dist/Auryn/Auryn.exe
+          else
+            echo "(dist/ does not exist — PyInstaller did not produce any output)"
+          fi
 
-      - name: Upload Auryn --onedir bundle as artifact
+      - name: Validate --onedir bundle (best-effort report)
+        id: validate
+        if: always()
+        run: |
+          set +e
+          fail=0
+          check() {
+            local kind="$1" path="$2" label="$3"
+            if [ "$kind" = "f" ] && [ -f "$path" ]; then
+              printf 'OK      %s (%s)\n' "$label" "$path"
+            elif [ "$kind" = "d" ] && [ -d "$path" ]; then
+              printf 'OK      %s (%s)\n' "$label" "$path"
+            else
+              printf 'MISSING %s (%s)\n' "$label" "$path"
+              fail=1
+            fi
+          }
+          check f dist/Auryn/Auryn.exe                  "Auryn.exe"
+          check f dist/Auryn/Auryn.ui                   "Auryn.ui"
+          check f dist/Auryn/assets/Auryn.svg           "assets/Auryn.svg"
+          check d dist/Auryn/lib/girepository-1.0       "GTK typelibs"
+          check d dist/Auryn/lib/gdk-pixbuf-2.0         "gdk-pixbuf loaders"
+          check d dist/Auryn/share/icons/Adwaita        "Adwaita icon theme"
+          check d dist/Auryn/share/glib-2.0/schemas     "GSettings schemas"
+          if [ "$fail" -ne 0 ]; then
+            echo "::warning::One or more expected files are missing from the --onedir bundle."
+          else
+            echo "Bundle layout OK."
+          fi
+          echo "onedir_failed=${fail}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload --onedir bundle (if produced)
+        # Only upload if Auryn.exe was actually produced. We don't gate on
+        # full validation here: an incomplete bundle is still useful to
+        # inspect locally, and the next step will fail the job anyway.
+        if: always() && hashFiles('dist/Auryn/Auryn.exe') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: auryn-windows-x64-${{ steps.version.outputs.version }}
+          name: auryn-windows-onedir-${{ steps.version.outputs.version }}
           path: dist/Auryn/
+          if-no-files-found: warn
+
+      - name: Build source-fallback zip (always)
+        if: always()
+        # Uses the default msys2 shell so the `zip` we installed via
+        # pacman is on PATH (Git Bash on the runner does not ship zip).
+        run: |
+          # Guaranteed Windows artifact: the Auryn source tree plus
+          # instructions for running it on Windows via MSYS2. Used when
+          # the standalone --onedir bundle is broken on a given run, so
+          # testers always have something they can download.
+          STAGE="dist-src/auryn-${{ steps.version.outputs.version }}"
+          mkdir -p "${STAGE}"
+          cp -r src      "${STAGE}/"
+          cp -r assets   "${STAGE}/"
+          cp -r desktop  "${STAGE}/"
+          cp -r packaging/windows "${STAGE}/packaging-windows"
+          cp    README.md LICENSE "${STAGE}/"
+          cat > "${STAGE}/README-WINDOWS.txt" <<'EOF'
+          Auryn — Windows experimental source build
+          =========================================
+
+          This is the source-only fallback artifact. Use this if the
+          standalone --onedir build (auryn-windows-onedir-<version>) is not
+          available for this run or does not launch on your machine.
+
+          Current limitations
+          -------------------
+          - No bundled Python interpreter.
+          - No bundled GTK3 runtime, PyGObject, or icon themes.
+          - No installer, no code signing, no auto-update.
+          - TIDAL / streamrip setup is NOT included and may still require
+            testing on Windows even after Auryn launches.
+
+          How to run
+          ----------
+          1. Install MSYS2 from https://www.msys2.org/
+          2. Open the MSYS2 MINGW64 shell and install GTK3 + PyGObject:
+
+                 pacman -S \
+                   mingw-w64-x86_64-gtk3 \
+                   mingw-w64-x86_64-python \
+                   mingw-w64-x86_64-python-gobject \
+                   mingw-w64-x86_64-adwaita-icon-theme \
+                   mingw-w64-x86_64-hicolor-icon-theme
+
+          3. From the same MINGW64 shell, in this directory, run:
+
+                 python src/Auryn.py
+
+          streamrip ('rip' command) is an external dependency. Install it
+          separately (for example with `pipx install streamrip`) and make
+          sure `rip --version` works in the same shell before launching
+          Auryn. See README.md for the full Windows notes.
+          EOF
+          # The MSYS2 zip package provides /usr/bin/zip.
+          ZIP_OUT="auryn-windows-source-${{ steps.version.outputs.version }}.zip"
+          ( cd dist-src && zip -qr "../${ZIP_OUT}" "auryn-${{ steps.version.outputs.version }}" )
+          ls -lh "${ZIP_OUT}"
+
+      - name: Upload source-fallback zip
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auryn-windows-source-${{ steps.version.outputs.version }}
+          path: auryn-windows-source-${{ steps.version.outputs.version }}.zip
           if-no-files-found: error
+
+      - name: Fail job if --onedir bundle is unusable
+        # Do not fake success. If PyInstaller did not produce a complete
+        # bundle, fail the job so the experimental status is visible —
+        # the source-fallback zip is still uploaded above.
+        if: always()
+        run: |
+          if [ "${{ steps.build_onedir.outcome }}" != "success" ] \
+             || [ "${{ steps.validate.outputs.onedir_failed }}" != "0" ]; then
+            echo "::error::The standalone --onedir Windows bundle did not pass validation."
+            echo "Inspect 'Build --onedir bundle', 'Inspect dist/' and 'Validate'."
+            echo "The source-fallback zip artifact is still available for download."
+            exit 1
+          fi
+          echo "Standalone --onedir bundle passed validation."
