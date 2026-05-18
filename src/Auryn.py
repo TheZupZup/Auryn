@@ -24,6 +24,7 @@ import webbrowser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.errors import parse_streamrip_error
 from core.status import build_status_markup
+from core import tidal_auth
 
 APP_NAME = "Auryn"
 APP_VERSION = "0.1.1"
@@ -267,6 +268,10 @@ def run_doctor(verbose=False):
         print(f"INFO  Platform: {platform.platform()}")
         print(f"INFO  streamrip config path: {cfg_path}")
         print(f"INFO  Default download folder: {folder}")
+        try:
+            print(tidal_auth.auth_debug_report(cfg_path))
+        except Exception as exc:
+            print(f"INFO  TIDAL auth report unavailable: {exc}")
 
     if sys.version_info < (3, 8):
         print(f"FAIL  Python >= 3.8 required (found {sys.version.split()[0]})")
@@ -402,6 +407,9 @@ class AurynApp:
         self._current_queue_item    = None
         self._queue_seq             = 0
         self._queue_stopped_by_user = False
+        self._active_url            = None
+        self._tidal_auth_required   = False
+        self._cfg_fingerprint_pre   = None
 
         # ── Forcer can-focus sur les widgets interactifs ──
         self.url_entry.set_can_focus(True)
@@ -1290,69 +1298,76 @@ class AurynApp:
                 for issue in fixed_issues:
                     self._log(f"   • {issue}\n", "error")
 
-    def _update_config(self, cfg, pattern, replacement, first_only=False):
-        if not os.path.exists(cfg):
-            return
-        try:
-            with open(cfg, 'r') as f:
-                content = f.read()
-            
-            if first_only:
-                new_content = re.sub(pattern, replacement, content, count=1, flags=re.MULTILINE)
-            else:
-                new_content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
-            
-            with open(cfg, 'w') as f:
-                f.write(new_content)
-        except Exception as e:
-            GLib.idle_add(self._log, f"⚠  Config update error: {e}\n", "error")
-
     def _apply_stored_credentials(self, cfg):
+        """Migrate any legacy ~/.config/Auryn/accounts.json into config.toml.
+
+        This is a one-way migration of an old Auryn storage format. It writes
+        through the atomic, section-scoped writer and deliberately **never
+        touches the [tidal] section**: TIDAL tokens are owned and refreshed
+        by streamrip itself, and rewriting them is exactly what broke auth
+        persistence. TIDAL must be (re)authenticated via the TIDAL Setup
+        flow, not migrated from a flat token file.
+        """
         acc_path = os.path.join(resolve_auryn_data_dir(), "accounts.json")
         if not os.path.exists(acc_path):
             return
 
         try:
-            with open(acc_path, 'r') as f:
+            with open(acc_path, 'r', encoding="utf-8") as f:
                 acc = json.load(f)
         except Exception as e:
             GLib.idle_add(self._log, f"⚠  Could not read accounts.json: {e}\n", "error")
             return
 
-        GLib.idle_add(self._log, "🔐  Applying stored credentials...\n", "info")
-        
-        # Qobuz
-        if "qobuz" in acc:
+        # canonical key -> (section, value, accepted key names) using
+        # streamrip's real schema keys, written via the atomic alias-aware
+        # section writer. TIDAL is intentionally absent.
+        plan = []
+        if isinstance(acc.get("qobuz"), dict):
             q = acc["qobuz"]
+            updates = {}
             if q.get("email"):
-                self._update_config(cfg, r"^email = .*", f'email = "{toml_escape(q["email"])}"')
+                updates["email"] = q["email"]
             if q.get("password"):
-                self._update_config(cfg, r"^password = .*", f'password = "{toml_escape(q["password"])}"')
-        
-        # Tidal
+                updates["password"] = q["password"]
+            if updates:
+                plan.append(("qobuz", updates,
+                             {"email": ["email", "email_or_userid"],
+                              "password": ["password", "password_or_token"]}))
+        if isinstance(acc.get("deezer"), dict) and acc["deezer"].get("arl"):
+            plan.append(("deezer", {"arl": acc["deezer"]["arl"]},
+                         {"arl": ["arl"]}))
+        if (isinstance(acc.get("soundcloud"), dict)
+                and acc["soundcloud"].get("oauth_token")):
+            plan.append(("soundcloud",
+                         {"oauth_token": acc["soundcloud"]["oauth_token"]},
+                         {"oauth_token": ["oauth_token"]}))
+
         if "tidal" in acc:
-            t = acc["tidal"]
-            if t.get("user_id"):
-                 self._update_config(cfg, r"^user_id = .*", f'user_id = "{toml_escape(t["user_id"])}"')
-            if t.get("token"):
-                 self._update_config(cfg, r"^token = .*", f'token = "{toml_escape(t["token"])}"')
+            self._auth_log(
+                "🔐  Skipping legacy TIDAL credentials in accounts.json — "
+                "TIDAL tokens are managed by streamrip; use TIDAL Setup to "
+                "re-authenticate.\n", "info")
 
-        # Deezer
-        if "deezer" in acc:
-            d = acc["deezer"]
-            if d.get("arl"):
-                 self._update_config(cfg, r"^arl = .*", f'arl = "{toml_escape(d["arl"])}"')
+        if not plan:
+            return
 
-        # SoundCloud
-        if "soundcloud" in acc:
-            s = acc["soundcloud"]
-            if s.get("oauth_token"):
-                 self._update_config(cfg, r"^oauth_token = .*", f'oauth_token = "{toml_escape(s["oauth_token"])}"')
+        GLib.idle_add(self._log, "🔐  Migrating stored credentials...\n", "info")
+        for section, updates, aliases in plan:
+            ok, err = self._write_streamrip_section(
+                cfg, section, updates, aliases)
+            if not ok:
+                self._auth_log(
+                    f"⚠  Could not migrate {section} credentials: {err}\n",
+                    "error")
 
     def _run_download(self, url, quality):
-        cfg_path = os.path.join(resolve_config_dir(), "config.toml")
-        cfg = os.path.expanduser(cfg_path)
-        db = os.path.join(resolve_config_dir(), "downloads.db")
+        cfg = self._streamrip_config_path()
+        db = os.path.join(os.path.dirname(cfg), "downloads.db")
+
+        self._active_url = url
+        self._tidal_auth_required = False
+        self._cfg_fingerprint_pre = None
 
         if self.cb_clear_cache.get_active() and os.path.exists(db):
             try:
@@ -1361,12 +1376,44 @@ class AurynApp:
             except Exception:
                 pass
 
+        self._auth_log(f"🗂  streamrip config: {cfg}\n", "info")
+
         if os.path.exists(cfg):
+            if tidal_auth.is_tidal_url(url):
+                self._log_tidal_preflight(cfg)
+            self._cfg_fingerprint_pre = tidal_auth.config_fingerprint(cfg)
+
             self._apply_stored_credentials(cfg)
-            safe_folder = toml_escape(self._dest_folder)
-            self._update_config(cfg, r"^quality = .*", f"quality = {quality}")
-            self._update_config(cfg, r"^use_auth_token = .*", "use_auth_token = true")
-            self._update_config(cfg, r"^folder = .*", f'folder = "{safe_folder}"', first_only=True)
+
+            edits = [
+                {"section": "downloads", "key": "folder",
+                 "value": self._dest_folder, "quote": True},
+                {"section": "qobuz", "key": "use_auth_token",
+                 "value": "true", "quote": False},
+            ]
+            for svc in ("qobuz", "tidal", "deezer", "soundcloud"):
+                edits.append({"section": svc, "key": "quality",
+                              "value": str(quality), "quote": False})
+
+            ok, err, changed = tidal_auth.apply_streamrip_config_updates(
+                cfg, edits)
+            if not ok:
+                self._auth_log(
+                    f"⚠  Could not update streamrip config safely: {err}\n",
+                    "error")
+            elif changed:
+                self._auth_log(
+                    "🗂  Updated config.toml sections "
+                    f"[{', '.join(changed)}] (TIDAL auth left untouched).\n",
+                    "info")
+
+            if tidal_auth.AUTH_DEBUG and tidal_auth.is_tidal_url(url):
+                for ln in tidal_auth.auth_debug_report(cfg).split("\n"):
+                    self._auth_log(ln + "\n", "dim")
+        else:
+            self._auth_log(
+                "⚠  streamrip config.toml not found — run TIDAL Setup or "
+                "`rip config reset` first.\n", "error")
 
         GLib.idle_add(self._log, f"🌐  URL     : {url}\n", "info")
         GLib.idle_add(self._log, f"🎵  Quality : {quality} | Dest : {self._dest_folder}\n", "info")
@@ -1521,6 +1568,15 @@ class AurynApp:
 
     def _parse_line(self, line):
         lo = line.lower()
+        if (not self._tidal_auth_required
+                and tidal_auth.is_tidal_url(self._active_url)
+                and tidal_auth.detect_tidal_auth_error(line)):
+            self._tidal_auth_required = True
+            self._set_status(
+                "🔐  TIDAL authentication required — see the dialog.", "error")
+            self._auth_log(
+                "🔐  Detected a TIDAL re-authentication / resync prompt in "
+                "streamrip output.\n", "error")
         if any(w in lo for w in ["error", "failed", "exception", "traceback"]):
             tag = "error"
             friendly = parse_streamrip_error(line)
@@ -1620,15 +1676,55 @@ class AurynApp:
                 self._log("\n❌  Download failed.\n", "error")
             self._history_set_status(self._current_history_entry, "Failed")
             self._queue_set_status(self._current_queue_item, "Failed")
+
+        self._post_download_config_audit()
+        tidal_blocked = (
+            not success
+            and self._tidal_auth_required
+            and (self._process is None or self._process.returncode != -15)
+        )
+
         self._current_history_entry = None
         self._current_queue_item    = None
         self.btn_download.set_sensitive(True)
         self.btn_stop.hide()
         self.speed_lbl.set_markup("")
-        if self._queue_stopped_by_user:
+        if tidal_blocked:
+            GLib.idle_add(self._show_tidal_auth_expired_dialog)
+            self._queue_stopped_by_user = False
+        elif self._queue_stopped_by_user:
             self._queue_stopped_by_user = False
         else:
             self._queue_start_next()
+
+    def _post_download_config_audit(self):
+        """Log whether streamrip rewrote config.toml during the download.
+
+        This makes the streamrip-side token-persistence behaviour visible:
+        on first login streamrip flushes the new tokens (file changes); on
+        later runs it refreshes the token only in memory and the file is
+        unchanged — which is exactly why a stale token keeps prompting.
+        """
+        pre = self._cfg_fingerprint_pre
+        self._cfg_fingerprint_pre = None
+        if not pre or not pre[0]:
+            return
+        cfg = self._streamrip_config_path()
+        post = tidal_auth.config_fingerprint(cfg)
+        if not post[0]:
+            self._auth_log(
+                "⚠  config.toml is missing after the download — streamrip "
+                "may have failed to persist auth.\n", "error")
+            return
+        if post[3] != pre[3]:
+            self._auth_log(
+                "🗂  streamrip rewrote config.toml during this run "
+                "(tokens were persisted).\n", "ok")
+        else:
+            self._auth_log(
+                "🗂  config.toml unchanged after this run — streamrip did "
+                "not re-persist TIDAL tokens (expected on token reuse).\n",
+                "info")
 
     def _log(self, text, tag=None):
         buf = self.log_view.get_buffer()
@@ -1659,42 +1755,67 @@ class AurynApp:
         self.cover_img.set_from_pixbuf(pb)
 
     def _streamrip_config_path(self):
-        return os.path.join(resolve_config_dir(), "config.toml")
-
-    def _tidal_token_status(self, cfg_path):
-        """Return {'access': bool, 'refresh': bool} for the [tidal] section.
-
-        Only presence is ever returned — token values are never read out,
-        returned, logged, or surfaced anywhere.
-        """
-        sec = self._read_streamrip_section(cfg_path, "tidal")
-
-        def _present(key):
-            v = sec.get(key)
-            return bool(v) and str(v).strip() not in ("", "null", "None")
-
-        return {"access": _present("access_token"),
-                "refresh": _present("refresh_token")}
+        # Mirrors streamrip's own click.get_app_dir("streamrip") resolution
+        # (Linux: ~/.config/streamrip, Windows: %APPDATA%/streamrip).
+        return tidal_auth.streamrip_config_path()
 
     def _scrub_secrets(self, text):
         """Redact anything token/credential shaped before it is shown anywhere.
 
-        streamrip's device-login output does not normally contain tokens, but
-        this is defence in depth so a token value can never reach the UI or
-        logs. The short link.tidal.com / login.tidal.com login URL never
-        matches these patterns and is preserved.
+        Delegates to the isolated, dependency-free helper so the masking
+        rules live in one place and can be unit-tested without GTK.
         """
-        if not text:
-            return text
-        text = re.sub(
-            r'(?i)\b(access_token|refresh_token|password|arl|client_secret|'
-            r'app_secret|token)\b(\s*[=:]\s*)("?)[^"\s\r\n]+("?)',
-            r'\1\2\3***REDACTED***\4', text)
-        text = re.sub(
-            r'\beyJ[A-Za-z0-9_\-]{15,}(?:\.[A-Za-z0-9_\-]{8,}){1,2}',
-            '***REDACTED***', text)
-        text = re.sub(r'\b[A-Za-z0-9_\-]{48,}\b', '***REDACTED***', text)
-        return text
+        return tidal_auth.scrub_secrets(text)
+
+    def _auth_log(self, message, tag="info"):
+        """Log an auth-diagnostic line (always scrubbed) from any thread."""
+        GLib.idle_add(self._log, tidal_auth.scrub_secrets(message), tag)
+
+    def _log_tidal_preflight(self, cfg_path):
+        """Log presence-only TIDAL auth state before a TIDAL download.
+
+        Never logs a token value — only whether tokens are present and
+        whether the saved session looks usable, so a failed download can be
+        traced to auth without leaking secrets.
+        """
+        st = tidal_auth.tidal_auth_status(cfg_path)
+        access = "present" if st["access_present"] else "MISSING"
+        refresh = "present" if st["refresh_present"] else "MISSING"
+        self._auth_log(
+            f"🔐  TIDAL auth check — access_token: {access}, "
+            f"refresh_token: {refresh} (values hidden).\n", "info")
+        if st["looks_authenticated"]:
+            self._auth_log(
+                "🔐  TIDAL session looks valid; reusing saved tokens.\n",
+                "ok")
+        else:
+            for problem in st["problems"]:
+                self._auth_log(f"⚠  TIDAL: {problem}\n", "error")
+
+    def _tidal_connection_summary(self, cfg_path):
+        """Lightweight, offline TIDAL connection check → (message, kind).
+
+        Inspects only the saved config (no network, no download) and reports
+        whether the session looks reusable, including expiry, never showing
+        a token value.
+        """
+        if not os.path.exists(cfg_path):
+            return ("streamrip config.toml not found — run TIDAL Setup or "
+                    "`rip config reset` first.", "warn")
+        st = tidal_auth.tidal_auth_status(cfg_path)
+        a = "present" if st["access_present"] else "missing"
+        r = "present" if st["refresh_present"] else "missing"
+        base = f"access_token: {a}, refresh_token: {r} (values hidden)."
+        if st["looks_authenticated"]:
+            extra = ""
+            if st["near_expiry"]:
+                extra = (" Token is close to expiry — streamrip will refresh "
+                         "it on the next download.")
+            return (f"TIDAL session looks valid — {base}{extra}", "ok")
+        if st["problems"]:
+            return (f"TIDAL not ready — {base} " + " ".join(st["problems"]),
+                    "warn")
+        return (f"TIDAL not logged in yet — {base}", "info")
 
     def _read_streamrip_section(self, cfg_path, section):
         """Best-effort read of one [section] table from config.toml.
@@ -1789,6 +1910,49 @@ class AurynApp:
                 pass
             return False, f"Could not write config.toml ({exc.strerror or 'I/O error'})."
         return True, None
+
+    def _show_tidal_auth_expired_dialog(self):
+        """Explain a TIDAL auth/resync failure and offer to re-run setup.
+
+        Shown when a TIDAL download fails because streamrip asked to log in
+        again. The wording makes clear this is a token-persistence problem,
+        not a bad URL, and never displays any token value.
+        """
+        cfg = self._streamrip_config_path()
+        st = tidal_auth.tidal_auth_status(cfg)
+        detail = (
+            "Your TIDAL download stopped because streamrip asked to log in "
+            "again.\n\n"
+            "TIDAL access tokens expire about once a week. streamrip refreshes "
+            "them in memory but does not always write the refreshed token back "
+            "to its config file, so a previously working login can start "
+            "prompting again.\n\n"
+            "Re-running TIDAL Setup writes a fresh, complete token set and "
+            "fixes this. Your TIDAL password is never seen or stored by "
+            "Auryn."
+        )
+        if st["problems"]:
+            detail += "\n\nDiagnostics:\n" + "\n".join(
+                f"  • {p}" for p in st["problems"])
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text="TIDAL authentication expired",
+        )
+        dlg.format_secondary_text(detail)
+        later_btn = dlg.add_button("Later", Gtk.ResponseType.CLOSE)
+        setup_btn = dlg.add_button("Reopen TIDAL Setup", Gtk.ResponseType.OK)
+        later_btn.get_style_context().add_class("neutral-btn")
+        setup_btn.get_style_context().add_class("neutral-btn")
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        response = dlg.run()
+        dlg.destroy()
+        if response == Gtk.ResponseType.OK:
+            GLib.idle_add(self._show_tidal_setup_dialog)
+        return False
 
     def _show_tidal_setup_dialog(self, *_):
         """Assisted TIDAL login.
@@ -1906,22 +2070,8 @@ class AurynApp:
             return False
 
         def refresh_token_status():
-            if not os.path.exists(cfg_path):
-                set_status("streamrip config.toml not found — create it below.",
-                           "warn")
-                return False
-            st = self._tidal_token_status(cfg_path)
-            a = "present" if st["access"] else "missing"
-            r = "present" if st["refresh"] else "missing"
-            if st["access"] or st["refresh"]:
-                set_status(
-                    f"TIDAL tokens in config.toml — access_token: {a}, "
-                    f"refresh_token: {r} (values hidden). You appear to be "
-                    "logged in.", "ok")
-            else:
-                set_status(
-                    f"TIDAL tokens in config.toml — access_token: {a}, "
-                    f"refresh_token: {r}. Not logged in yet.", "info")
+            msg, kind = self._tidal_connection_summary(cfg_path)
+            set_status(msg, kind)
             return False
 
         def show_config_reset():
@@ -1970,25 +2120,38 @@ class AurynApp:
                        "tokens…", "info")
             return False
 
-        def finish_worker(success, timed_out):
+        def finish_worker(outcome):
             state["running"] = False
             start_btn.set_sensitive(True)
             test_btn.set_sensitive(True)
-            if success:
-                st = self._tidal_token_status(cfg_path)
-                a = "present" if st["access"] else "missing"
-                r = "present" if st["refresh"] else "missing"
+            kind = outcome.get("state")
+            if kind == "ok":
                 set_status(
-                    f"TIDAL login complete — access_token: {a}, "
-                    f"refresh_token: {r} (values hidden). streamrip will "
-                    "refresh these automatically.", "ok")
+                    "TIDAL login complete — access and refresh tokens were "
+                    "written and validated (values hidden). The saved "
+                    "session will be reused for downloads.", "ok")
                 GLib.idle_add(
                     self._log,
-                    "🔐  TIDAL login completed — tokens saved by streamrip.\n",
-                    "info")
-            elif timed_out:
+                    "🔐  TIDAL login completed — full token set persisted by "
+                    "streamrip and validated.\n", "ok")
+            elif kind == "partial":
+                problems = outcome.get("problems") or []
+                msg = ("TIDAL login is incomplete — streamrip did not "
+                       "persist a full, valid token set, so downloads will "
+                       "keep asking you to log in.")
+                if problems:
+                    msg += "  " + "  ".join(problems)
+                msg += "  Try 'Start TIDAL login' again."
+                set_status(msg, "warn")
+                self._auth_log(
+                    "⚠  TIDAL setup produced an incomplete token set — "
+                    "asking the user to retry.\n", "error")
+            elif kind == "timeout":
                 set_status("Timed out waiting for TIDAL login. Open the link "
                            "and approve the device, then try again.", "warn")
+            elif kind == "error":
+                set_status(outcome.get("message")
+                           or "TIDAL login could not start.", "error")
             elif not stop.is_set():
                 set_status("TIDAL login did not complete. Check the output "
                            "above and try again.", "warn")
@@ -1997,10 +2160,10 @@ class AurynApp:
         def worker():
             rip = self._find_rip_path()
             if not rip:
-                GLib.idle_add(set_status,
-                              "rip (streamrip) was not found in PATH. Install "
-                              "streamrip first.", "error")
-                GLib.idle_add(finish_worker, False, False)
+                GLib.idle_add(finish_worker, {
+                    "state": "error",
+                    "message": "rip (streamrip) was not found in PATH. "
+                               "Install streamrip first."})
                 return
 
             env = os.environ.copy()
@@ -2015,9 +2178,9 @@ class AurynApp:
                     env=env, creationflags=creationflags,
                 )
             except Exception as exc:
-                GLib.idle_add(set_status,
-                              f"Could not start rip: {exc}", "error")
-                GLib.idle_add(finish_worker, False, False)
+                GLib.idle_add(finish_worker, {
+                    "state": "error",
+                    "message": f"Could not start rip: {exc}"})
                 return
             state["proc"] = proc
 
@@ -2045,36 +2208,75 @@ class AurynApp:
 
             threading.Thread(target=reader, daemon=True).start()
 
+            # Phase 1: wait for streamrip to write a token, or for it to
+            # exit / time out. We must NOT kill streamrip the instant a
+            # token byte appears: streamrip only flushes the *complete*
+            # token set (user_id, country_code, access, refresh,
+            # token_expiry) when its own config context manager exits.
+            # Terminating mid-flush is exactly what leaves a partial
+            # config.toml and causes the next download to re-authenticate.
             start_ts = time.time()
-            success = False
+            tokens_seen_ts = None
             timed_out = False
             while True:
                 if stop.is_set():
                     break
-                st = self._tidal_token_status(cfg_path)
-                if st["access"] or st["refresh"]:
-                    success = True
-                    break
                 if proc.poll() is not None:
-                    st = self._tidal_token_status(cfg_path)
-                    success = st["access"] or st["refresh"]
                     break
-                if time.time() - start_ts > 240:
+                if tokens_seen_ts is None and tidal_auth.tidal_auth_present(
+                        cfg_path):
+                    tokens_seen_ts = time.time()
+                    GLib.idle_add(
+                        set_status,
+                        "Tokens received — waiting for streamrip to finish "
+                        "writing them…", "info")
+                if tokens_seen_ts is not None:
+                    # streamrip exits on its own once the throwaway probe
+                    # URL fails; give it a bounded grace period to do so.
+                    if time.time() - tokens_seen_ts > 45:
+                        break
+                elif time.time() - start_ts > 240:
                     timed_out = True
                     break
                 time.sleep(0.5)
 
+            # Let streamrip exit cleanly so its config flush completes;
+            # only force it down if it overruns the grace window.
             try:
                 if proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except Exception:
-                        proc.kill()
+                    if not stop.is_set():
+                        try:
+                            proc.wait(timeout=20)
+                        except Exception:
+                            pass
+                    if proc.poll() is None:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except Exception:
+                            proc.kill()
             except Exception:
                 pass
 
-            GLib.idle_add(finish_worker, success, timed_out)
+            # Settle so we never validate a config.toml mid-write, then
+            # check the *integrity* of what streamrip persisted.
+            if not stop.is_set():
+                time.sleep(1.2)
+            st = tidal_auth.tidal_auth_status(cfg_path)
+            if st["looks_authenticated"]:
+                outcome = {"state": "ok"}
+            elif st["access_present"] or st["refresh_present"]:
+                outcome = {"state": "partial", "problems": st["problems"]}
+            elif timed_out:
+                outcome = {"state": "timeout"}
+            else:
+                outcome = {"state": "none"}
+
+            if tidal_auth.AUTH_DEBUG:
+                for ln in tidal_auth.auth_debug_report(cfg_path).split("\n"):
+                    self._auth_log(ln + "\n", "dim")
+
+            GLib.idle_add(finish_worker, outcome)
 
         def on_start(_b):
             if state["running"]:
@@ -2373,16 +2575,35 @@ class AurynApp:
                     'stores and refreshes the tokens in its own config.toml. '
                     'Auryn never stores a TIDAL password.</span>'
                 ), False, False, 0)
+                tidal_row = Gtk.Box(
+                    orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                tidal_row.set_halign(Gtk.Align.START)
                 tidal_btn = Gtk.Button(label="TIDAL Setup…")
-                tidal_btn.get_style_context().add_class("neutral-btn")
-                tidal_btn.set_halign(Gtk.Align.START)
+                test_conn_btn = Gtk.Button(label="Test TIDAL Connection")
+                for _b in (tidal_btn, test_conn_btn):
+                    _b.get_style_context().add_class("neutral-btn")
 
                 def on_tidal_setup(_b):
                     GLib.idle_add(self._show_tidal_setup_dialog)
                     dlg.response(Gtk.ResponseType.CANCEL)
 
+                def on_test_conn(_b):
+                    msg, kind = self._tidal_connection_summary(
+                        self._streamrip_config_path())
+                    if self._find_rip_path() is None:
+                        msg += "  Note: rip was not found in PATH."
+                        kind = "warn" if kind == "ok" else kind
+                    set_status(msg, kind)
+                    if tidal_auth.AUTH_DEBUG:
+                        self._auth_log(
+                            tidal_auth.auth_debug_report(
+                                self._streamrip_config_path()) + "\n", "dim")
+
                 tidal_btn.connect("clicked", on_tidal_setup)
-                body.pack_start(tidal_btn, False, False, 0)
+                test_conn_btn.connect("clicked", on_test_conn)
+                tidal_row.pack_start(tidal_btn, False, False, 0)
+                tidal_row.pack_start(test_conn_btn, False, False, 0)
+                body.pack_start(tidal_row, False, False, 0)
                 state["entries"] = {}
 
             body.show_all()
@@ -2427,13 +2648,7 @@ class AurynApp:
                         msg, kind = ("No Deezer ARL found in config.toml. "
                                      "Save it first.", "warn")
                 else:
-                    st = self._tidal_token_status(cfg_path)
-                    if st["access"] or st["refresh"]:
-                        msg, kind = ("TIDAL tokens present in config.toml "
-                                     "(values hidden).", "ok")
-                    else:
-                        msg, kind = ("No TIDAL tokens in config.toml. Use "
-                                     "TIDAL Setup… to log in.", "warn")
+                    msg, kind = self._tidal_connection_summary(cfg_path)
                 if not rip_ok:
                     msg += "  Note: rip was not found in PATH."
                     if kind == "ok":
@@ -2515,6 +2730,14 @@ class AurynApp:
                 ok = False
                 print(f"FAIL  Diagnostics raised an exception: {exc}")
         output = buf_io.getvalue() or "(no output)"
+        try:
+            output += "\n\n" + tidal_auth.auth_debug_report(
+                self._streamrip_config_path())
+        except Exception as exc:
+            output += f"\n\n(TIDAL auth report unavailable: {exc})"
+        if not tidal_auth.AUTH_DEBUG:
+            output += ("\n\nTip: set AURYN_DEBUG_AUTH=1 (or run with "
+                       "--debug-auth) for live TIDAL auth logging.")
 
         dlg = Gtk.Dialog(
             title="Auryn Diagnostics",
@@ -2645,8 +2868,15 @@ if __name__ == "__main__":
         print(f"{APP_NAME} {APP_VERSION}")
         raise SystemExit(0)
 
+    if "--debug-auth" in sys.argv:
+        # Developer auth-diagnostics mode: turn on verbose, scrubbed TIDAL
+        # auth logging for the rest of this process.
+        os.environ["AURYN_DEBUG_AUTH"] = "1"
+        tidal_auth.AUTH_DEBUG = True
+
     if "--doctor" in sys.argv:
-        verbose = "--verbose" in sys.argv or "-v" in sys.argv
+        verbose = ("--verbose" in sys.argv or "-v" in sys.argv
+                   or "--debug-auth" in sys.argv)
         if "--report" in sys.argv:
             buf_io = io.StringIO()
             with contextlib.redirect_stdout(buf_io), contextlib.redirect_stderr(buf_io):
