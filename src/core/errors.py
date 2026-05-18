@@ -16,6 +16,10 @@ def parse_streamrip_error(output: str):
     if any(p in lo for p in ["invalid arl", "arl expired", "arl is invalid", "bad arl"]):
         return "❌  Deezer ARL token is invalid or expired — update it in accounts.json."
 
+    if "could not convert string to float" in lo:
+        return ("❌  TIDAL auth data is corrupted (empty/invalid token_expiry) "
+                "— use TIDAL Setup to repair and log in again.")
+
     if any(p in lo for p in [
         "invalid token", "token expired", "token is invalid", "token has expired",
     ]):

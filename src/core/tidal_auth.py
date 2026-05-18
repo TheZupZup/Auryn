@@ -36,6 +36,13 @@ TIDAL_PROTECTED_KEYS = frozenset({
     "user_id", "country_code", "access_token", "refresh_token", "token_expiry",
 })
 
+# Same five keys, but ordered, for deterministic rewrites that match the
+# pristine streamrip config template. Used *only* by clear_broken_tidal_auth
+# (the single, audited exception to "never rewrite the [tidal] block").
+TIDAL_AUTH_TOKEN_KEYS = (
+    "user_id", "country_code", "access_token", "refresh_token", "token_expiry",
+)
+
 # streamrip refreshes a TIDAL access token when it is within one day of
 # expiry (see streamrip client/tidal.py: ``token_expiry - time.time() <
 # 86400``). We mirror that threshold so our diagnostics match its behaviour.
@@ -112,6 +119,26 @@ def read_tidal_section(cfg_path):
 def _present(section, key):
     v = section.get(key)
     return bool(v) and str(v).strip() not in ("", "null", "None")
+
+
+def _expiry_state(raw):
+    """Classify a raw token_expiry value without ever returning it.
+
+    Returns one of ``"missing"``, ``"empty"``, ``"invalid"`` or ``"valid"``.
+    ``"empty"`` and ``"invalid"`` are exactly the two states that make
+    streamrip raise ``ValueError`` from ``float(token_expiry)`` and fall back
+    into a re-login loop. The raw value is never logged or returned.
+    """
+    if raw is None:
+        return "missing"
+    s = str(raw).strip().strip('"').strip()
+    if s in ("", "null", "None"):
+        return "empty"
+    try:
+        float(s)
+    except (TypeError, ValueError):
+        return "invalid"
+    return "valid"
 
 
 def tidal_auth_status(cfg_path):
@@ -266,6 +293,24 @@ def detect_tidal_auth_error(text):
     if "tidal" in lo and any(p in lo for p in _WEAK_AUTH_PATTERNS):
         return True
     return False
+
+
+def detect_tidal_token_expiry_error(text):
+    """True when streamrip crashed parsing an empty / corrupt token_expiry.
+
+    This is the concrete ``ValueError: could not convert string to float:
+    ''`` streamrip raises from ``float(config.session.tidal.token_expiry)``
+    when the saved token_expiry is empty or non-numeric — the root cause of
+    the TIDAL re-login loop.
+
+    The ``ValueError:`` summary line rarely contains the word "tidal" (the
+    streamrip file path is on a preceding traceback frame), so callers must
+    keep this scoped to a TIDAL download (``is_tidal_url``) just like
+    ``detect_tidal_auth_error``.
+    """
+    if not text:
+        return False
+    return "could not convert string to float" in text.lower()
 
 
 def mask_secret(value):
@@ -449,10 +494,282 @@ def auth_debug_report(cfg_path):
     lines.append(f"expired          : {st['expired']}")
     lines.append(f"near expiry      : {st['near_expiry']}")
     lines.append(f"looks authed     : {st['looks_authenticated']}")
+
+    v = validate_tidal_auth_state(cfg_path)
+    lines.append(
+        "auth fields      : access={a}, refresh={r}, user_id={u}".format(
+            a="present" if v["access_present"] else "MISSING",
+            r="present" if v["refresh_present"] else "MISSING",
+            u="present" if v["identity_present"] else "MISSING"))
+    lines.append(f"token_expiry st  : {v['expiry_state']}")
+    lines.append(f"expiry parses    : {v['expiry_state'] == 'valid'}")
+    lines.append(f"refresh possible : {v['refresh_possible']}")
+    lines.append(f"state valid      : {v['valid']}")
+    lines.append(f"auto-repairable  : {v['broken'] and v['section_readable']}")
+
     if st["problems"]:
         lines.append("problems         :")
         lines.extend(f"  - {p}" for p in st["problems"])
     else:
         lines.append("problems         : none")
+    lines.append("───────────────────────────────────────────────────────")
+    return "\n".join(lines)
+
+
+def validate_tidal_auth_state(cfg_path):
+    """Inspect the saved TIDAL auth block and report exactly what is broken.
+
+    Pure inspection — never writes, never raises, never returns a secret.
+    Detects the four states that send Auryn into a TIDAL re-login loop:
+
+      * empty token_expiry        (streamrip: ``ValueError`` on ``float("")``)
+      * non-numeric token_expiry  (streamrip: ``ValueError`` on ``float(...)``)
+      * missing refresh_token     (streamrip cannot refresh -> re-login)
+      * missing access_token      (no saved session at all)
+
+    Returns a dict of booleans / short strings only.
+    """
+    result = {
+        "config_exists": os.path.exists(cfg_path),
+        "section_readable": False,
+        "access_present": False,
+        "refresh_present": False,
+        "identity_present": False,
+        "expiry_state": "missing",     # missing | empty | invalid | valid
+        "expiry_ts": None,
+        "expiry_value_error": False,   # the exact streamrip float() crash
+        "refresh_possible": False,
+        "broken_fields": [],
+        "reasons": [],
+        "valid": False,
+        "broken": True,
+    }
+
+    if not result["config_exists"]:
+        result["reasons"].append("streamrip config.toml not found.")
+        result["broken_fields"] = list(TIDAL_AUTH_TOKEN_KEYS)
+        return result
+
+    sec = read_tidal_section(cfg_path)
+    if not sec:
+        result["reasons"].append(
+            "Could not read the [tidal] section (missing or unparseable).")
+        result["broken_fields"] = list(TIDAL_AUTH_TOKEN_KEYS)
+        return result
+    result["section_readable"] = True
+
+    result["access_present"] = _present(sec, "access_token")
+    result["refresh_present"] = _present(sec, "refresh_token")
+    result["identity_present"] = _present(sec, "user_id")
+
+    es = _expiry_state(sec.get("token_expiry"))
+    result["expiry_state"] = es
+    if es == "valid":
+        try:
+            result["expiry_ts"] = float(
+                str(sec.get("token_expiry")).strip().strip('"'))
+        except (TypeError, ValueError):
+            # _expiry_state already proved this parses; defensive only.
+            result["expiry_state"] = es = "invalid"
+    result["expiry_value_error"] = es in ("empty", "invalid")
+
+    if not result["access_present"]:
+        result["broken_fields"].append("access_token")
+        result["reasons"].append("access_token is missing.")
+    if not result["refresh_present"]:
+        result["broken_fields"].append("refresh_token")
+        result["reasons"].append(
+            "refresh_token is missing — streamrip cannot refresh the "
+            "session and will prompt to log in again.")
+    if es == "empty":
+        result["broken_fields"].append("token_expiry")
+        result["reasons"].append(
+            'token_expiry is empty — streamrip raises ValueError on '
+            'float("") and falls back to a full re-login.')
+    elif es == "invalid":
+        result["broken_fields"].append("token_expiry")
+        result["reasons"].append(
+            "token_expiry is not a number — streamrip raises ValueError "
+            "parsing it and cannot load the saved session.")
+    elif es == "missing":
+        result["broken_fields"].append("token_expiry")
+        result["reasons"].append("token_expiry is missing.")
+
+    result["refresh_possible"] = (
+        result["refresh_present"]
+        and result["access_present"]
+        and es == "valid")
+    result["broken"] = bool(result["broken_fields"])
+    result["valid"] = not result["broken"]
+    return result
+
+
+def sanitize_tidal_auth_state(cfg_path):
+    """Secret-free, UI-safe summary of the TIDAL auth state + repair plan.
+
+    Returns only presence / validity strings (never a token value) plus the
+    list of fields ``clear_broken_tidal_auth`` would reset, so the same data
+    can safely drive a warning dialog, the debug panel and logs without any
+    chance of leaking a credential.
+    """
+    v = validate_tidal_auth_state(cfg_path)
+
+    def _f(present):
+        return "present" if present else "missing"
+
+    fields = {
+        "access_token": _f(v["access_present"]),
+        "refresh_token": _f(v["refresh_present"]),
+        "user_id": _f(v["identity_present"]),
+        "token_expiry": v["expiry_state"],
+    }
+
+    if v["valid"]:
+        summary = "TIDAL auth state looks complete and valid."
+    elif not v["config_exists"]:
+        summary = "streamrip config.toml not found — TIDAL login required."
+    elif not v["section_readable"]:
+        summary = ("The [tidal] section is missing or unreadable — a clean "
+                   "TIDAL login is required.")
+    elif v["expiry_value_error"]:
+        why = ("empty" if v["expiry_state"] == "empty"
+               else "not a valid number")
+        summary = ("TIDAL auth data is corrupted/incomplete: token_expiry is "
+                   f"{why}. streamrip would crash with a ValueError and keep "
+                   "asking you to log in.")
+    else:
+        summary = ("TIDAL auth data is incomplete: "
+                   + ", ".join(v["broken_fields"]) + " unusable.")
+
+    return {
+        "summary": summary,
+        "fields": fields,
+        "expiry_valid": v["expiry_state"] == "valid",
+        "refresh_possible": v["refresh_possible"],
+        "removable_fields": (list(TIDAL_AUTH_TOKEN_KEYS)
+                             if v["broken"] else []),
+        "reasons": list(v["reasons"]),
+        "needs_relogin": not v["valid"],
+        "can_repair": (v["config_exists"] and v["section_readable"]
+                       and v["broken"]),
+    }
+
+
+def clear_broken_tidal_auth(cfg_path, force=False, dry_run=False):
+    """Reset only the TIDAL auth token fields so a clean re-login can run.
+
+    This is the *one* deliberate, audited exception to Auryn's rule of never
+    touching streamrip's ``[tidal]`` block. It is safe because:
+
+      * it refuses unless :func:`validate_tidal_auth_state` reports the saved
+        session is actually broken (``force`` overrides for an explicit,
+        user-initiated reset),
+      * it only ever resets the five auth keys to ``""`` — the pristine
+        streamrip-template value — and never writes a bogus value,
+      * every other section, every other ``[tidal]`` key (quality,
+        download_videos, …), every comment and blank line is preserved
+        verbatim, and the file is replaced atomically with ``0600`` perms
+        (it can hold a password).
+
+    ``dry_run`` reports what would change without writing. Returns
+    ``(ok, error_or_None, cleared_fields)``; neither the error string nor the
+    field list ever contains a credential value.
+    """
+    v = validate_tidal_auth_state(cfg_path)
+    if not v["config_exists"]:
+        return (False, "streamrip config.toml not found.", [])
+    if not v["broken"] and not force:
+        return (False,
+                "TIDAL auth state looks valid — nothing to repair.", [])
+
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except OSError as exc:
+        return (False,
+                f"Could not read config.toml ({exc.strerror or 'I/O error'}).",
+                [])
+    lines = raw.split("\n")
+
+    t_start = None
+    for i, ln in enumerate(lines):
+        m = re.match(r"\s*\[([^\]]+)\]\s*$", ln)
+        if m and m.group(1).strip() == "tidal":
+            t_start = i
+            break
+    if t_start is None:
+        return (False, "[tidal] section is missing from config.toml.", [])
+    t_end = len(lines)
+    for j in range(t_start + 1, len(lines)):
+        if re.match(r"\s*\[([^\]]+)\]\s*$", lines[j]):
+            t_end = j
+            break
+
+    cleared = []
+    for k in range(t_start + 1, t_end):
+        km = re.match(r"\s*([A-Za-z0-9_]+)\s*=", lines[k])
+        if not km:
+            continue
+        key = km.group(1)
+        if key in TIDAL_AUTH_TOKEN_KEYS:
+            reset = f'{key} = ""'
+            if lines[k] != reset:
+                if not dry_run:
+                    lines[k] = reset
+                cleared.append(key)
+
+    if not cleared or dry_run:
+        return (True, None, sorted(set(cleared)))
+
+    tmp_path = cfg_path + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        try:
+            os.chmod(tmp_path, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp_path, cfg_path)
+    except OSError as exc:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        return (False,
+                f"Could not write config.toml ({exc.strerror or 'I/O error'}).",
+                [])
+    return (True, None, sorted(set(cleared)))
+
+
+def render_auth_panel(cfg_path):
+    """Compact, always-safe TIDAL auth panel for the diagnostics dialog.
+
+    Unlike :func:`auth_debug_report` this never includes masked token
+    fingerprints or file paths — only field presence, token_expiry validity
+    and whether the refresh flow is possible — so it is safe to show even
+    when auth-debug mode is off and never spams a raw traceback.
+    """
+    s = sanitize_tidal_auth_state(cfg_path)
+    f = s["fields"]
+    lines = [
+        "── TIDAL auth state ───────────────────────────────────",
+        f"summary          : {s['summary']}",
+        f"access_token     : {f['access_token']}",
+        f"refresh_token    : {f['refresh_token']}",
+        f"user_id          : {f['user_id']}",
+        f"token_expiry     : {f['token_expiry']}",
+        f"token_expiry ok  : {s['expiry_valid']}",
+        f"refresh possible : {s['refresh_possible']}",
+        f"needs re-login   : {s['needs_relogin']}",
+        f"auto-repairable  : {s['can_repair']}",
+    ]
+    if s["reasons"]:
+        lines.append("issues           :")
+        lines.extend(f"  - {r}" for r in s["reasons"])
     lines.append("───────────────────────────────────────────────────────")
     return "\n".join(lines)

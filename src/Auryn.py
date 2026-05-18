@@ -409,6 +409,8 @@ class AurynApp:
         self._queue_stopped_by_user = False
         self._active_url            = None
         self._tidal_auth_required   = False
+        self._tidal_auth_corrupted  = False
+        self._tb_noise_notified     = False
         self._cfg_fingerprint_pre   = None
 
         # ── Forcer can-focus sur les widgets interactifs ──
@@ -1367,6 +1369,8 @@ class AurynApp:
 
         self._active_url = url
         self._tidal_auth_required = False
+        self._tidal_auth_corrupted = False
+        self._tb_noise_notified = False
         self._cfg_fingerprint_pre = None
 
         if self.cb_clear_cache.get_active() and os.path.exists(db):
@@ -1381,6 +1385,20 @@ class AurynApp:
         if os.path.exists(cfg):
             if tidal_auth.is_tidal_url(url):
                 self._log_tidal_preflight(cfg)
+                # Pre-empt the known streamrip crash: a saved session with a
+                # present access_token but empty/invalid token_expiry makes
+                # streamrip raise ValueError on float(token_expiry) and loop
+                # on re-login. Stop here and offer a one-click repair instead
+                # of spawning streamrip just to watch it crash.
+                v = tidal_auth.validate_tidal_auth_state(cfg)
+                if v["access_present"] and v["expiry_value_error"]:
+                    self._auth_log(
+                        "🔐  TIDAL auth data is corrupted/incomplete "
+                        "(token_expiry is "
+                        f"{v['expiry_state']}); skipping the download to "
+                        "avoid a streamrip crash loop.\n", "error")
+                    GLib.idle_add(self._finish_tidal_corrupted)
+                    return
             self._cfg_fingerprint_pre = tidal_auth.config_fingerprint(cfg)
 
             self._apply_stored_credentials(cfg)
@@ -1566,8 +1584,42 @@ class AurynApp:
 
     # ── Parsing log ──────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _is_traceback_noise(line):
+        """True for raw Python traceback frame lines (not the summary).
+
+        Only the multi-line internal frames are noise; the final
+        ``ExceptionType: message`` line is kept so it can still be mapped to
+        user-friendly feedback.
+        """
+        s = line.rstrip("\n")
+        if s.strip() == "Traceback (most recent call last):":
+            return True
+        if re.match(r'\s*File ".*", line \d+', s):
+            return True
+        if re.match(r'\s+[~^]+\s*$', s):
+            return True
+        return False
+
     def _parse_line(self, line):
         lo = line.lower()
+
+        # TIDAL token_expiry crash: streamrip raises ValueError on
+        # float(token_expiry) when it is empty/corrupt. Scoped to a TIDAL
+        # download exactly like the auth-error detection below.
+        if (not self._tidal_auth_corrupted
+                and tidal_auth.is_tidal_url(self._active_url)
+                and tidal_auth.detect_tidal_token_expiry_error(line)):
+            self._tidal_auth_corrupted = True
+            friendly = ("🔐  TIDAL auth data is corrupted (empty/invalid "
+                        "token_expiry) — open TIDAL Setup to repair.")
+            self._set_status(friendly, "error")
+            if not self._last_known_error:
+                self._last_known_error = friendly
+            self._auth_log(
+                "🔐  streamrip raised a ValueError parsing token_expiry — "
+                "the saved TIDAL session is corrupt/incomplete.\n", "error")
+
         if (not self._tidal_auth_required
                 and tidal_auth.is_tidal_url(self._active_url)
                 and tidal_auth.detect_tidal_auth_error(line)):
@@ -1577,6 +1629,17 @@ class AurynApp:
             self._auth_log(
                 "🔐  Detected a TIDAL re-authentication / resync prompt in "
                 "streamrip output.\n", "error")
+
+        # Collapse raw traceback frames unless auth-debug is enabled so a
+        # streamrip crash does not flood the log with internal frames.
+        if not tidal_auth.AUTH_DEBUG and self._is_traceback_noise(line):
+            if not self._tb_noise_notified:
+                self._tb_noise_notified = True
+                self._log(
+                    "ℹ️  Suppressed an internal traceback (run with "
+                    "--debug-auth to show it).\n", "dim")
+            return
+
         if any(w in lo for w in ["error", "failed", "exception", "traceback"]):
             tag = "error"
             friendly = parse_streamrip_error(line)
@@ -1678,10 +1741,15 @@ class AurynApp:
             self._queue_set_status(self._current_queue_item, "Failed")
 
         self._post_download_config_audit()
+        user_stopped = (self._process is not None
+                        and self._process.returncode == -15)
+        tidal_corrupted = (
+            not success and self._tidal_auth_corrupted and not user_stopped)
         tidal_blocked = (
             not success
             and self._tidal_auth_required
-            and (self._process is None or self._process.returncode != -15)
+            and not tidal_corrupted
+            and not user_stopped
         )
 
         self._current_history_entry = None
@@ -1689,7 +1757,10 @@ class AurynApp:
         self.btn_download.set_sensitive(True)
         self.btn_stop.hide()
         self.speed_lbl.set_markup("")
-        if tidal_blocked:
+        if tidal_corrupted:
+            GLib.idle_add(self._show_tidal_auth_corrupted_dialog)
+            self._queue_stopped_by_user = False
+        elif tidal_blocked:
             GLib.idle_add(self._show_tidal_auth_expired_dialog)
             self._queue_stopped_by_user = False
         elif self._queue_stopped_by_user:
@@ -1910,6 +1981,122 @@ class AurynApp:
                 pass
             return False, f"Could not write config.toml ({exc.strerror or 'I/O error'})."
         return True, None
+
+    def _finish_tidal_corrupted(self):
+        """UI reset + warning for the pre-download corrupt-auth abort.
+
+        Used when the saved TIDAL session is detectably broken (empty/invalid
+        token_expiry with an access_token present) so we never even spawn
+        streamrip into its ValueError crash loop. Mirrors the failure branch
+        of ``_finish`` but without any process handling, and never advances
+        the queue (the user must re-authenticate first).
+        """
+        self._set_status(
+            "🔐  TIDAL auth data is corrupted — open TIDAL Setup to repair.",
+            "error")
+        self._log(
+            "\n🔐  TIDAL download skipped: saved auth is corrupt/incomplete.\n",
+            "error")
+        self._history_set_status(self._current_history_entry, "Failed")
+        self._queue_set_status(self._current_queue_item, "Failed")
+        self._current_history_entry = None
+        self._current_queue_item = None
+        self.btn_download.set_sensitive(True)
+        self.btn_stop.hide()
+        self.speed_lbl.set_markup("")
+        self._queue_stopped_by_user = False
+        GLib.idle_add(self._show_tidal_auth_corrupted_dialog)
+        return False
+
+    def _auto_repair_tidal_auth(self, then_relogin=True):
+        """Optional repair: clear only the broken TIDAL auth fields.
+
+        Removes the corrupt/incomplete TIDAL token fields from streamrip's
+        config.toml (preserving every other setting), then optionally reopens
+        the assisted login so a clean, complete token set is written. Never
+        logs or shows a token value — ``clear_broken_tidal_auth`` returns
+        only field names.
+        """
+        cfg = self._streamrip_config_path()
+        ok, err, cleared = tidal_auth.clear_broken_tidal_auth(cfg)
+        if ok and cleared:
+            self._auth_log(
+                "🛠  Repaired TIDAL auth — reset corrupt fields ["
+                + ", ".join(cleared) + "] in config.toml; all other "
+                "settings were preserved.\n", "ok")
+            self._set_status(
+                "🛠  TIDAL auth reset — please log in again.", "info")
+        elif ok:
+            self._auth_log(
+                "🛠  TIDAL auth was already clean — no fields needed "
+                "resetting.\n", "info")
+        else:
+            self._auth_log(
+                f"⚠  Could not repair TIDAL auth: {err}\n", "error")
+            self._set_status(
+                "⚠  Automatic TIDAL repair failed — see the log.", "error")
+        if then_relogin:
+            GLib.idle_add(self._show_tidal_setup_dialog)
+        return False
+
+    def _show_tidal_auth_corrupted_dialog(self):
+        """Clear warning for corrupt/incomplete TIDAL auth + one-click fix.
+
+        Shown when token_expiry is empty/invalid (or another auth field is
+        unusable) — the state that crashes streamrip and triggers the
+        re-login loop. Explains the problem in plain language, shows only a
+        secret-free diagnostic, and offers an optional automatic repair plus
+        one-click re-authentication. No token value is ever displayed.
+        """
+        cfg = self._streamrip_config_path()
+        s = tidal_auth.sanitize_tidal_auth_state(cfg)
+
+        detail = (
+            "Auryn found a TIDAL login on disk, but the saved authentication "
+            "data is incomplete or corrupted.\n\n"
+            + s["summary"] + "\n\n"
+            "This is not a bad link or a wrong password — streamrip wrote a "
+            "partial token set (a common cause: an empty token_expiry), so "
+            "loading the saved session fails and every download keeps asking "
+            "you to log in again.\n\n"
+            "Auryn can repair this for you: it removes only the broken TIDAL "
+            "auth fields from streamrip's config (every other setting is kept "
+            "untouched) and then reopens the assisted login so a fresh, "
+            "complete token set is written. Your TIDAL password is never "
+            "seen or stored by Auryn."
+        )
+        fields = s["fields"]
+        detail += (
+            "\n\nAuth fields (values hidden):"
+            f"\n  • access_token  : {fields['access_token']}"
+            f"\n  • refresh_token : {fields['refresh_token']}"
+            f"\n  • user_id       : {fields['user_id']}"
+            f"\n  • token_expiry  : {fields['token_expiry']}"
+            f"\n  • refresh possible : {s['refresh_possible']}"
+        )
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text="TIDAL authentication data is corrupted",
+        )
+        dlg.format_secondary_text(detail)
+        later_btn = dlg.add_button("Later", Gtk.ResponseType.CLOSE)
+        relogin_btn = dlg.add_button("Re-login only", 2)
+        repair_btn = dlg.add_button("Repair & re-login", 1)
+        for _b in (later_btn, relogin_btn, repair_btn):
+            _b.get_style_context().add_class("neutral-btn")
+        repair_btn.set_sensitive(bool(s["can_repair"]))
+        dlg.set_default_response(1 if s["can_repair"] else 2)
+        response = dlg.run()
+        dlg.destroy()
+        if response == 1:
+            GLib.idle_add(self._auto_repair_tidal_auth, True)
+        elif response == 2:
+            GLib.idle_add(self._show_tidal_setup_dialog)
+        return False
 
     def _show_tidal_auth_expired_dialog(self):
         """Explain a TIDAL auth/resync failure and offer to re-run setup.
@@ -2730,14 +2917,27 @@ class AurynApp:
                 ok = False
                 print(f"FAIL  Diagnostics raised an exception: {exc}")
         output = buf_io.getvalue() or "(no output)"
+        cfg_path = self._streamrip_config_path()
+        # Always show the concise, secret-free auth panel (field presence,
+        # token_expiry validity, whether the refresh flow is possible).
         try:
-            output += "\n\n" + tidal_auth.auth_debug_report(
-                self._streamrip_config_path())
+            output += "\n\n" + tidal_auth.render_auth_panel(cfg_path)
         except Exception as exc:
-            output += f"\n\n(TIDAL auth report unavailable: {exc})"
-        if not tidal_auth.AUTH_DEBUG:
+            output += ("\n\n(TIDAL auth panel unavailable"
+                       + (f": {exc!r}" if tidal_auth.AUTH_DEBUG else "")
+                       + ")")
+        # The fuller masked report (config path + token fingerprints) is only
+        # appended in auth-debug mode so the default panel stays lean and
+        # never risks dumping a raw traceback.
+        if tidal_auth.AUTH_DEBUG:
+            try:
+                output += "\n\n" + tidal_auth.auth_debug_report(cfg_path)
+            except Exception as exc:
+                output += f"\n\n(TIDAL auth report unavailable: {exc!r})"
+        else:
             output += ("\n\nTip: set AURYN_DEBUG_AUTH=1 (or run with "
-                       "--debug-auth) for live TIDAL auth logging.")
+                       "--debug-auth) for full masked TIDAL auth "
+                       "diagnostics and live auth logging.")
 
         dlg = Gtk.Dialog(
             title="Auryn Diagnostics",
