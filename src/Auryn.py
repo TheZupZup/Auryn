@@ -1638,131 +1638,440 @@ class AurynApp:
         pb.fill(0x161616ff)
         self.cover_img.set_from_pixbuf(pb)
 
+    def _streamrip_config_path(self):
+        return os.path.join(resolve_config_dir(), "config.toml")
+
+    def _read_streamrip_section(self, cfg_path, section):
+        """Best-effort read of one [section] table from config.toml.
+
+        Returns a dict of string values, or {} on any problem. Never raises and
+        never logs the values it reads.
+        """
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            return {}
+        try:
+            import tomllib  # stdlib on Python 3.11+
+            sec = tomllib.loads(text).get(section)
+            if isinstance(sec, dict):
+                return {k: ("" if v is None else str(v)) for k, v in sec.items()}
+        except Exception:
+            pass
+        result = {}
+        in_section = False
+        for line in text.split("\n"):
+            s = line.strip()
+            m = re.match(r"\[([^\]]+)\]\s*$", s)
+            if m:
+                in_section = m.group(1).strip() == section
+                continue
+            if in_section:
+                km = re.match(r'([A-Za-z0-9_]+)\s*=\s*"?(.*?)"?\s*$', s)
+                if km:
+                    result[km.group(1)] = km.group(2)
+        return result
+
+    def _write_streamrip_section(self, cfg_path, section, updates, aliases):
+        """Update key = "value" lines inside an existing [section] only.
+
+        ``updates`` maps a canonical key to its new value; ``aliases`` maps the
+        same canonical key to the list of accepted key names (in priority
+        order) so this works across streamrip config schema versions. Every
+        other section, comment and blank line is preserved verbatim. The file
+        is rewritten atomically with 0600 permissions because it now holds a
+        password. Returns (ok, error_message); error messages never contain
+        credential values.
+        """
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                lines = f.read().split("\n")
+        except OSError as exc:
+            return False, f"Could not read config.toml ({exc.strerror or 'I/O error'})."
+
+        start = None
+        for i, ln in enumerate(lines):
+            m = re.match(r"\s*\[([^\]]+)\]\s*$", ln)
+            if m and m.group(1).strip() == section:
+                start = i
+                break
+        if start is None:
+            return False, f"Section [{section}] is missing from config.toml."
+
+        end = len(lines)
+        for j in range(start + 1, len(lines)):
+            if re.match(r"\s*\[([^\]]+)\]\s*$", lines[j]):
+                end = j
+                break
+
+        for canon, value in updates.items():
+            accepted = aliases.get(canon, [canon])
+            written = False
+            for k in range(start + 1, end):
+                km = re.match(r"\s*([A-Za-z0-9_]+)\s*=", lines[k])
+                if km and km.group(1) in accepted:
+                    lines[k] = f'{km.group(1)} = "{toml_escape(value)}"'
+                    written = True
+                    break
+            if not written:
+                lines.insert(start + 1, f'{accepted[0]} = "{toml_escape(value)}"')
+                end += 1
+
+        tmp_path = cfg_path + ".tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            try:
+                os.chmod(tmp_path, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp_path, cfg_path)
+        except OSError as exc:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            return False, f"Could not write config.toml ({exc.strerror or 'I/O error'})."
+        return True, None
+
     def _show_credentials_dialog(self, *_):
+        RESP_TEST = 10
+
         dlg = Gtk.Dialog(
-            title="Credentials",
+            title="Service Credentials",
             transient_for=self.window,
             flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
         )
-        dlg.set_default_size(420, -1)
+        dlg.set_default_size(470, -1)
 
+        test_btn   = dlg.add_button("Test credentials", RESP_TEST)
         cancel_btn = dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
         save_btn   = dlg.add_button("Save",   Gtk.ResponseType.OK)
-        cancel_btn.get_style_context().add_class("neutral-btn")
-        save_btn.get_style_context().add_class("neutral-btn")
+        for _b in (test_btn, cancel_btn, save_btn):
+            _b.get_style_context().add_class("neutral-btn")
 
         content = dlg.get_content_area()
         content.set_spacing(0)
 
-        grid = Gtk.Grid()
-        grid.set_column_spacing(12)
-        grid.set_row_spacing(8)
-        grid.set_margin_start(20)
-        grid.set_margin_end(20)
-        grid.set_margin_top(16)
-        grid.set_margin_bottom(16)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        outer.set_margin_start(20)
+        outer.set_margin_end(20)
+        outer.set_margin_top(16)
+        outer.set_margin_bottom(16)
 
-        _row = [0]
+        intro = Gtk.Label()
+        intro.set_markup(
+            '<span foreground="#888888" size="small">'
+            'Credentials are written only to the streamrip config file. '
+            'Auryn never stores them.</span>'
+        )
+        intro.set_halign(Gtk.Align.START)
+        intro.set_line_wrap(True)
+        intro.set_xalign(0.0)
+        outer.pack_start(intro, False, False, 0)
 
-        def section(title):
+        sel_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        sel_lbl = Gtk.Label()
+        sel_lbl.set_markup('<span foreground="#888888" size="small">Service</span>')
+        combo = Gtk.ComboBoxText()
+        for sid, label in (("qobuz", "Qobuz"), ("deezer", "Deezer"), ("tidal", "TIDAL")):
+            combo.append(sid, label)
+        combo.set_active(0)
+        sel_row.pack_start(sel_lbl, False, False, 0)
+        sel_row.pack_start(combo, True, True, 0)
+        outer.pack_start(sel_row, False, False, 0)
+
+        outer.pack_start(
+            Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0
+        )
+
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer.pack_start(body, True, True, 0)
+
+        status_lbl = Gtk.Label()
+        status_lbl.set_halign(Gtk.Align.START)
+        status_lbl.set_line_wrap(True)
+        status_lbl.set_xalign(0.0)
+        outer.pack_start(status_lbl, False, False, 0)
+
+        content.pack_start(outer, True, True, 0)
+
+        state = {"service": "qobuz", "entries": {}, "config_ok": False}
+
+        def set_status(msg, kind="info"):
+            colors = {"info": "#888888", "ok": "#4CAF50",
+                      "warn": "#FFB300", "error": "#e74c3c"}
+            safe = msg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            status_lbl.set_markup(
+                f'<span foreground="{colors.get(kind, "#888888")}" '
+                f'size="small">{safe}</span>'
+            )
+
+        def make_label(text):
             lbl = Gtk.Label()
-            lbl.set_markup(f'<span foreground="#FF6B35" weight="bold" size="small">{title}</span>')
-            lbl.set_halign(Gtk.Align.START)
-            if _row[0] > 0:
-                lbl.set_margin_top(6)
-            grid.attach(lbl, 0, _row[0], 2, 1)
-            _row[0] += 1
-
-        def field(label_text, placeholder="", secret=False):
-            lbl = Gtk.Label()
-            lbl.set_markup(f'<span foreground="#888888" size="small">{label_text}</span>')
+            lbl.set_markup(f'<span foreground="#888888" size="small">{text}</span>')
             lbl.set_halign(Gtk.Align.END)
             lbl.set_valign(Gtk.Align.CENTER)
+            return lbl
+
+        def make_entry(placeholder, secret=False):
             entry = Gtk.Entry()
             entry.set_placeholder_text(placeholder)
             entry.set_hexpand(True)
             entry.set_visibility(not secret)
             entry.get_style_context().add_class("cred-entry")
-            grid.attach(lbl, 0, _row[0], 1, 1)
             if secret:
-                box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-                box.pack_start(entry, True, True, 0)
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                row.pack_start(entry, True, True, 0)
                 toggle = Gtk.Button(label="Show")
                 toggle.get_style_context().add_class("neutral-btn")
                 def on_toggle(btn, e=entry):
-                    visible = not e.get_visibility()
-                    e.set_visibility(visible)
-                    btn.set_label("Hide" if visible else "Show")
+                    vis = not e.get_visibility()
+                    e.set_visibility(vis)
+                    btn.set_label("Hide" if vis else "Show")
                 toggle.connect("clicked", on_toggle)
-                box.pack_start(toggle, False, False, 0)
-                grid.attach(box, 1, _row[0], 1, 1)
-            else:
-                grid.attach(entry, 1, _row[0], 1, 1)
-            _row[0] += 1
-            return entry
+                row.pack_start(toggle, False, False, 0)
+                return entry, row
+            return entry, entry
 
-        def separator():
-            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-            sep.set_margin_top(4)
-            sep.set_margin_bottom(4)
-            grid.attach(sep, 0, _row[0], 2, 1)
-            _row[0] += 1
+        def note(markup_text):
+            lbl = Gtk.Label()
+            lbl.set_markup(markup_text)
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_line_wrap(True)
+            lbl.set_xalign(0.0)
+            return lbl
 
-        acc = {}
-        acc_path = os.path.join(resolve_auryn_data_dir(), "accounts.json")
-        if os.path.exists(acc_path):
-            try:
-                with open(acc_path, 'r', encoding="utf-8") as f:
-                    acc = json.load(f)
-            except Exception:
-                pass
+        def render(service):
+            for child in body.get_children():
+                body.remove(child)
+            state["service"] = service
+            state["entries"] = {}
 
-        section("Qobuz")
-        qobuz_email = field("Email",    "your@email.com")
-        qobuz_pass  = field("Password", "••••••••", secret=True)
-        if isinstance(acc.get("qobuz"), dict):
-            qobuz_email.set_text(acc["qobuz"].get("email", ""))
-            qobuz_pass.set_text(acc["qobuz"].get("password", ""))
+            cfg_path = self._streamrip_config_path()
+            if not os.path.exists(cfg_path):
+                state["config_ok"] = False
+                body.pack_start(note(
+                    '<span foreground="#FFB300" size="small">'
+                    'streamrip config.toml was not found at:\n'
+                    f'<tt>{cfg_path}</tt>\n\n'
+                    'It must exist before credentials can be saved.</span>'
+                ), False, False, 0)
+                fix_btn = Gtk.Button(label="Run  rip config reset")
+                fix_btn.get_style_context().add_class("neutral-btn")
+                fix_btn.set_halign(Gtk.Align.START)
+                def on_fix(_b):
+                    rip = self._find_rip_path()
+                    if not rip:
+                        set_status(
+                            "rip was not found. Install streamrip, then run "
+                            "`rip config reset` in a terminal.", "error")
+                        return
+                    try:
+                        subprocess.run([rip, "config", "reset"],
+                                       capture_output=True, text=True, timeout=30)
+                    except Exception:
+                        pass
+                    if os.path.exists(cfg_path):
+                        set_status(
+                            "config.toml created. You can now enter credentials.",
+                            "ok")
+                        render(state["service"])
+                    else:
+                        set_status(
+                            "Could not create config.toml automatically. Run "
+                            "`rip config reset` in a terminal, then reopen "
+                            "this dialog.", "error")
+                fix_btn.connect("clicked", on_fix)
+                body.pack_start(fix_btn, False, False, 0)
+                body.pack_start(note(
+                    '<span foreground="#666666" size="small">'
+                    'Or run this in a terminal:  <tt>rip config reset</tt></span>'
+                ), False, False, 0)
+                body.show_all()
+                return
 
-        separator()
+            state["config_ok"] = True
+            existing = self._read_streamrip_section(cfg_path, service)
 
-        section("Deezer")
-        deezer_arl = field("ARL Token", "paste your ARL here", secret=True)
-        if isinstance(acc.get("deezer"), dict):
-            deezer_arl.set_text(acc["deezer"].get("arl", ""))
+            if service == "qobuz":
+                grid = Gtk.Grid()
+                grid.set_column_spacing(12)
+                grid.set_row_spacing(8)
+                email_entry, email_w = make_entry("you@example.com")
+                cur_email = (existing.get("email")
+                             or existing.get("email_or_userid") or "")
+                if cur_email:
+                    email_entry.set_text(cur_email)
+                pass_entry, pass_w = make_entry(
+                    "leave blank to keep current", secret=True)
+                grid.attach(make_label("Email / Username"), 0, 0, 1, 1)
+                grid.attach(email_w, 1, 0, 1, 1)
+                grid.attach(make_label("Password"), 0, 1, 1, 1)
+                grid.attach(pass_w, 1, 1, 1, 1)
+                body.pack_start(grid, False, False, 0)
+                body.pack_start(note(
+                    '<span foreground="#666666" size="small">'
+                    'Qobuz signs in with an email/username and password. The '
+                    'password is hidden by default and is never logged. Leave '
+                    'it blank to keep the one already saved.</span>'
+                ), False, False, 0)
+                state["entries"] = {"email": email_entry, "password": pass_entry}
 
-        separator()
+            elif service == "deezer":
+                grid = Gtk.Grid()
+                grid.set_column_spacing(12)
+                grid.set_row_spacing(8)
+                arl_entry, arl_w = make_entry(
+                    "leave blank to keep current", secret=True)
+                grid.attach(make_label("ARL Token"), 0, 0, 1, 1)
+                grid.attach(arl_w, 1, 0, 1, 1)
+                body.pack_start(grid, False, False, 0)
+                body.pack_start(note(
+                    '<span foreground="#FFB300" size="small">'
+                    'Deezer does not use email/password. streamrip '
+                    'authenticates with an ARL token (a value copied from the '
+                    'Deezer website cookie). Paste it above.</span>'
+                ), False, False, 0)
+                if existing.get("arl"):
+                    body.pack_start(note(
+                        '<span foreground="#666666" size="small">'
+                        'An ARL is already configured. Leave the field blank '
+                        'to keep it.</span>'
+                    ), False, False, 0)
+                state["entries"] = {"arl": arl_entry}
 
-        section("Tidal")
-        tidal_token = field("Token", "paste your token here", secret=True)
-        if isinstance(acc.get("tidal"), dict):
-            tidal_token.set_text(acc["tidal"].get("token", ""))
+            else:  # tidal
+                body.pack_start(note(
+                    '<span foreground="#FFB300" size="small">'
+                    'TIDAL does not support email/password login in '
+                    'streamrip.</span>'
+                ), False, False, 0)
+                body.pack_start(note(
+                    '<span foreground="#888888" size="small">'
+                    'TIDAL uses web/device authentication. Start a TIDAL '
+                    'download once and follow the on-screen device-login '
+                    'prompt, or run <tt>rip url &lt;tidal-link&gt;</tt> in a '
+                    'terminal to complete the TIDAL login flow. Auryn cannot '
+                    'store a TIDAL email/password.</span>'
+                ), False, False, 0)
+                state["entries"] = {}
 
-        content.pack_start(grid, True, True, 0)
+            body.show_all()
+
+        def on_combo_changed(c):
+            sid = c.get_active_id()
+            if sid:
+                set_status("")
+                render(sid)
+
+        combo.connect("changed", on_combo_changed)
+        render("qobuz")
         dlg.show_all()
-        resp = dlg.run()
-        if resp == Gtk.ResponseType.OK:
-            acc_data = dict(acc)
-            q_email = qobuz_email.get_text().strip()
-            q_pass  = qobuz_pass.get_text().strip()
-            if q_email or q_pass:
-                if not isinstance(acc_data.get("qobuz"), dict):
-                    acc_data["qobuz"] = {}
-                acc_data["qobuz"]["email"] = q_email
-                acc_data["qobuz"]["password"] = q_pass
-            d_arl = deezer_arl.get_text().strip()
-            if d_arl:
-                if not isinstance(acc_data.get("deezer"), dict):
-                    acc_data["deezer"] = {}
-                acc_data["deezer"]["arl"] = d_arl
-            t_token = tidal_token.get_text().strip()
-            if t_token:
-                if not isinstance(acc_data.get("tidal"), dict):
-                    acc_data["tidal"] = {}
-                acc_data["tidal"]["token"] = t_token
-            os.makedirs(os.path.dirname(acc_path), exist_ok=True)
-            with open(acc_path, "w", encoding="utf-8") as f:
-                json.dump(acc_data, f, indent=2)
+
+        while True:
+            resp = dlg.run()
+
+            if resp == RESP_TEST:
+                service = state["service"]
+                cfg_path = self._streamrip_config_path()
+                if not os.path.exists(cfg_path):
+                    set_status("config.toml not found — create it first.", "error")
+                    continue
+                rip_ok = self._find_rip_path() is not None
+                saved = self._read_streamrip_section(cfg_path, service)
+                if service == "qobuz":
+                    has_email = bool(saved.get("email")
+                                     or saved.get("email_or_userid"))
+                    has_pass = bool(saved.get("password")
+                                    or saved.get("password_or_token"))
+                    if has_email and has_pass:
+                        msg, kind = ("Qobuz email and password are present in "
+                                     "config.toml.", "ok")
+                    else:
+                        msg, kind = ("Qobuz credentials are incomplete in "
+                                     "config.toml. Save them first.", "warn")
+                elif service == "deezer":
+                    if saved.get("arl"):
+                        msg, kind = ("Deezer ARL is present in config.toml.",
+                                     "ok")
+                    else:
+                        msg, kind = ("No Deezer ARL found in config.toml. "
+                                     "Save it first.", "warn")
+                else:
+                    msg, kind = ("TIDAL uses web/device authentication; "
+                                 "nothing to test here.", "info")
+                if not rip_ok:
+                    msg += "  Note: rip was not found in PATH."
+                    if kind == "ok":
+                        kind = "warn"
+                set_status(msg, kind)
+                continue
+
+            if resp == Gtk.ResponseType.OK:
+                if not state.get("config_ok"):
+                    set_status(
+                        "config.toml is missing. Create it before saving.",
+                        "error")
+                    continue
+                service = state["service"]
+                cfg_path = self._streamrip_config_path()
+
+                if service == "tidal":
+                    set_status(
+                        "TIDAL has no email/password to save. Use the device "
+                        "login flow described above.", "info")
+                    continue
+
+                entries = state["entries"]
+                if service == "qobuz":
+                    email = entries["email"].get_text().strip()
+                    password = entries["password"].get_text()
+                    if not email and not password:
+                        set_status(
+                            "Enter an email/username and password.", "warn")
+                        continue
+                    updates = {}
+                    if email:
+                        updates["email"] = email
+                    if password:
+                        updates["password"] = password
+                    ok, err = self._write_streamrip_section(
+                        cfg_path, "qobuz", updates,
+                        {"email": ["email", "email_or_userid"],
+                         "password": ["password", "password_or_token"]},
+                    )
+                    if ok:
+                        GLib.idle_add(
+                            self._log,
+                            "🔐  Qobuz credentials saved to streamrip config.\n",
+                            "info")
+                        dlg.destroy()
+                        return
+                    set_status(err or "Could not save credentials.", "error")
+                    continue
+
+                if service == "deezer":
+                    arl = entries["arl"].get_text().strip()
+                    if not arl:
+                        set_status("Enter a Deezer ARL token.", "warn")
+                        continue
+                    ok, err = self._write_streamrip_section(
+                        cfg_path, "deezer", {"arl": arl}, {"arl": ["arl"]},
+                    )
+                    if ok:
+                        GLib.idle_add(
+                            self._log,
+                            "🔐  Deezer ARL saved to streamrip config.\n",
+                            "info")
+                        dlg.destroy()
+                        return
+                    set_status(err or "Could not save credentials.", "error")
+                    continue
+
+            break
+
         dlg.destroy()
 
     def _show_diagnostics(self, *_):
