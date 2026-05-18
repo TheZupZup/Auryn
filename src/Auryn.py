@@ -19,6 +19,7 @@ import sys
 import io
 import time
 import contextlib
+import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.errors import parse_streamrip_error
@@ -87,6 +88,16 @@ separator { background-color: #252525; }
 
 QUALITY_LABELS = ["MP3 128", "MP3 320", "FLAC 16/44.1", "FLAC 24/96+", "Max (MQA)"]
 QUALITY_VALUES = ["0",       "1",       "2",            "3",           "4"]
+
+# streamrip authenticates the TIDAL client (device/web login) before it ever
+# resolves or downloads a URL, so any syntactically valid TIDAL link is enough
+# to trigger the login flow. The assisted setup terminates streamrip as soon
+# as the tokens are written, so this URL is never actually downloaded.
+TIDAL_LOGIN_PROBE_URL = "https://tidal.com/browse/album/1"
+
+# Matches the device/web login link streamrip prints (link.tidal.com / a
+# login.tidal.com authorize URL). Token blobs never match this.
+TIDAL_LOGIN_URL_RE = re.compile(r'https?://[^\s\'"<>]*tidal[^\s\'"<>]*', re.I)
 
 
 def detect_service_and_id(url):
@@ -159,6 +170,15 @@ def download_cover(cover_url, size=185):
 
 
 def resolve_config_dir():
+    """Locate streamrip's config directory the same way streamrip does.
+
+    streamrip uses click.get_app_dir("streamrip"): on Windows that is
+    %APPDATA%\\streamrip, and on Linux it is $XDG_CONFIG_HOME/streamrip
+    (defaulting to ~/.config/streamrip).
+    """
+    if IS_WINDOWS:
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "streamrip")
     xdg = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
     return os.path.join(xdg, "streamrip")
 
@@ -1641,6 +1661,41 @@ class AurynApp:
     def _streamrip_config_path(self):
         return os.path.join(resolve_config_dir(), "config.toml")
 
+    def _tidal_token_status(self, cfg_path):
+        """Return {'access': bool, 'refresh': bool} for the [tidal] section.
+
+        Only presence is ever returned — token values are never read out,
+        returned, logged, or surfaced anywhere.
+        """
+        sec = self._read_streamrip_section(cfg_path, "tidal")
+
+        def _present(key):
+            v = sec.get(key)
+            return bool(v) and str(v).strip() not in ("", "null", "None")
+
+        return {"access": _present("access_token"),
+                "refresh": _present("refresh_token")}
+
+    def _scrub_secrets(self, text):
+        """Redact anything token/credential shaped before it is shown anywhere.
+
+        streamrip's device-login output does not normally contain tokens, but
+        this is defence in depth so a token value can never reach the UI or
+        logs. The short link.tidal.com / login.tidal.com login URL never
+        matches these patterns and is preserved.
+        """
+        if not text:
+            return text
+        text = re.sub(
+            r'(?i)\b(access_token|refresh_token|password|arl|client_secret|'
+            r'app_secret|token)\b(\s*[=:]\s*)("?)[^"\s\r\n]+("?)',
+            r'\1\2\3***REDACTED***\4', text)
+        text = re.sub(
+            r'\beyJ[A-Za-z0-9_\-]{15,}(?:\.[A-Za-z0-9_\-]{8,}){1,2}',
+            '***REDACTED***', text)
+        text = re.sub(r'\b[A-Za-z0-9_\-]{48,}\b', '***REDACTED***', text)
+        return text
+
     def _read_streamrip_section(self, cfg_path, section):
         """Best-effort read of one [section] table from config.toml.
 
@@ -1734,6 +1789,368 @@ class AurynApp:
                 pass
             return False, f"Could not write config.toml ({exc.strerror or 'I/O error'})."
         return True, None
+
+    def _show_tidal_setup_dialog(self, *_):
+        """Assisted TIDAL login.
+
+        TIDAL has no email/password in streamrip — it uses a web/device
+        login. This dialog runs streamrip, surfaces the login URL it prints
+        (with a button to open it in a browser), streams its sanitized
+        output, and detects success by watching for access/refresh tokens in
+        streamrip's own config.toml. No password is ever requested and no
+        token value is ever shown or logged.
+        """
+        cfg_path = self._streamrip_config_path()
+
+        dlg = Gtk.Dialog(
+            title="TIDAL Setup",
+            transient_for=self.window,
+            flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
+        )
+        dlg.set_default_size(560, 520)
+        close_btn = dlg.add_button("Close", Gtk.ResponseType.CLOSE)
+        close_btn.get_style_context().add_class("neutral-btn")
+
+        content = dlg.get_content_area()
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        outer.set_margin_start(20)
+        outer.set_margin_end(20)
+        outer.set_margin_top(16)
+        outer.set_margin_bottom(16)
+        content.pack_start(outer, True, True, 0)
+
+        def note(markup_text):
+            lbl = Gtk.Label()
+            lbl.set_markup(markup_text)
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_line_wrap(True)
+            lbl.set_xalign(0.0)
+            return lbl
+
+        outer.pack_start(note(
+            '<span foreground="#e8e8e8" weight="bold">TIDAL login</span>'
+        ), False, False, 0)
+        outer.pack_start(note(
+            '<span foreground="#888888" size="small">'
+            'TIDAL does not use an email/password in streamrip. It signs in '
+            'with a <b>web/device login</b>: streamrip prints a link, you open '
+            'it in your browser and approve this device. streamrip then '
+            'stores and refreshes the access/refresh tokens in its own '
+            'config.toml — Auryn never sees or stores your TIDAL '
+            'password.</span>'
+        ), False, False, 0)
+
+        safe_cfg = (cfg_path.replace("&", "&amp;")
+                    .replace("<", "&lt;").replace(">", "&gt;"))
+        outer.pack_start(note(
+            '<span foreground="#666666" size="small">streamrip config:\n'
+            f'<tt>{safe_cfg}</tt></span>'
+        ), False, False, 0)
+
+        status_lbl = Gtk.Label()
+        status_lbl.set_halign(Gtk.Align.START)
+        status_lbl.set_line_wrap(True)
+        status_lbl.set_xalign(0.0)
+        outer.pack_start(status_lbl, False, False, 0)
+
+        url_lbl = Gtk.Label()
+        url_lbl.set_halign(Gtk.Align.START)
+        url_lbl.set_line_wrap(True)
+        url_lbl.set_xalign(0.0)
+        url_lbl.set_selectable(True)
+        outer.pack_start(url_lbl, False, False, 0)
+
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        start_btn = Gtk.Button(label="Start TIDAL login")
+        open_btn = Gtk.Button(label="Open login URL")
+        test_btn = Gtk.Button(label="Test TIDAL login")
+        for _b in (start_btn, open_btn, test_btn):
+            _b.get_style_context().add_class("neutral-btn")
+        open_btn.set_sensitive(False)
+        btn_row.pack_start(start_btn, False, False, 0)
+        btn_row.pack_start(open_btn, False, False, 0)
+        btn_row.pack_start(test_btn, False, False, 0)
+        outer.pack_start(btn_row, False, False, 0)
+
+        out_view = Gtk.TextView()
+        out_view.set_editable(False)
+        out_view.set_cursor_visible(False)
+        out_view.set_monospace(True)
+        out_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        out_scroll = Gtk.ScrolledWindow()
+        out_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        out_scroll.set_hexpand(True)
+        out_scroll.set_vexpand(True)
+        out_scroll.add(out_view)
+        out_scroll.get_style_context().add_class("history-row")
+        outer.pack_start(out_scroll, True, True, 0)
+
+        stop = threading.Event()
+        state = {"proc": None, "url": None, "running": False}
+        colors = {"info": "#888888", "ok": "#4CAF50",
+                  "warn": "#FFB300", "error": "#e74c3c"}
+
+        def set_status(msg, kind="info"):
+            safe = (msg.replace("&", "&amp;")
+                    .replace("<", "&lt;").replace(">", "&gt;"))
+            status_lbl.set_markup(
+                f'<span foreground="{colors.get(kind, "#888888")}" '
+                f'size="small">{safe}</span>')
+            return False
+
+        def append_output(text):
+            buf = out_view.get_buffer()
+            buf.insert(buf.get_end_iter(), text)
+            adj = out_scroll.get_vadjustment()
+            adj.set_value(adj.get_upper() - adj.get_page_size())
+            return False
+
+        def refresh_token_status():
+            if not os.path.exists(cfg_path):
+                set_status("streamrip config.toml not found — create it below.",
+                           "warn")
+                return False
+            st = self._tidal_token_status(cfg_path)
+            a = "present" if st["access"] else "missing"
+            r = "present" if st["refresh"] else "missing"
+            if st["access"] or st["refresh"]:
+                set_status(
+                    f"TIDAL tokens in config.toml — access_token: {a}, "
+                    f"refresh_token: {r} (values hidden). You appear to be "
+                    "logged in.", "ok")
+            else:
+                set_status(
+                    f"TIDAL tokens in config.toml — access_token: {a}, "
+                    f"refresh_token: {r}. Not logged in yet.", "info")
+            return False
+
+        def show_config_reset():
+            for ch in btn_row.get_children():
+                ch.set_sensitive(False)
+            fix_btn = Gtk.Button(label="Run  rip config reset")
+            fix_btn.get_style_context().add_class("neutral-btn")
+            fix_btn.set_halign(Gtk.Align.START)
+
+            def on_fix(_b):
+                rip = self._find_rip_path()
+                if not rip:
+                    set_status("rip was not found. Install streamrip, then "
+                               "run `rip config reset` in a terminal.", "error")
+                    return
+                try:
+                    subprocess.run([rip, "config", "reset"],
+                                   capture_output=True, text=True, timeout=30)
+                except Exception:
+                    pass
+                if os.path.exists(cfg_path):
+                    fix_btn.destroy()
+                    for ch in btn_row.get_children():
+                        ch.set_sensitive(True)
+                    open_btn.set_sensitive(False)
+                    refresh_token_status()
+                else:
+                    set_status("Could not create config.toml automatically. "
+                               "Run `rip config reset` in a terminal, then "
+                               "reopen this dialog.", "error")
+
+            fix_btn.connect("clicked", on_fix)
+            outer.pack_start(fix_btn, False, False, 0)
+            outer.show_all()
+
+        def on_url_found(url):
+            state["url"] = url
+            open_btn.set_sensitive(True)
+            safe = (url.replace("&", "&amp;")
+                    .replace("<", "&lt;").replace(">", "&gt;"))
+            url_lbl.set_markup(
+                '<span foreground="#FF6B35" size="small">Login link: '
+                f'<tt>{safe}</tt></span>')
+            set_status("Open the login link in your browser and approve this "
+                       "device. Waiting for streamrip to receive the "
+                       "tokens…", "info")
+            return False
+
+        def finish_worker(success, timed_out):
+            state["running"] = False
+            start_btn.set_sensitive(True)
+            test_btn.set_sensitive(True)
+            if success:
+                st = self._tidal_token_status(cfg_path)
+                a = "present" if st["access"] else "missing"
+                r = "present" if st["refresh"] else "missing"
+                set_status(
+                    f"TIDAL login complete — access_token: {a}, "
+                    f"refresh_token: {r} (values hidden). streamrip will "
+                    "refresh these automatically.", "ok")
+                GLib.idle_add(
+                    self._log,
+                    "🔐  TIDAL login completed — tokens saved by streamrip.\n",
+                    "info")
+            elif timed_out:
+                set_status("Timed out waiting for TIDAL login. Open the link "
+                           "and approve the device, then try again.", "warn")
+            elif not stop.is_set():
+                set_status("TIDAL login did not complete. Check the output "
+                           "above and try again.", "warn")
+            return False
+
+        def worker():
+            rip = self._find_rip_path()
+            if not rip:
+                GLib.idle_add(set_status,
+                              "rip (streamrip) was not found in PATH. Install "
+                              "streamrip first.", "error")
+                GLib.idle_add(finish_worker, False, False)
+                return
+
+            env = os.environ.copy()
+            env["PYTHONUNBUFFERED"] = "1"
+            creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                             if IS_WINDOWS else 0)
+            try:
+                proc = subprocess.Popen(
+                    [rip, "url", TIDAL_LOGIN_PROBE_URL],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL, text=True, bufsize=1,
+                    env=env, creationflags=creationflags,
+                )
+            except Exception as exc:
+                GLib.idle_add(set_status,
+                              f"Could not start rip: {exc}", "error")
+                GLib.idle_add(finish_worker, False, False)
+                return
+            state["proc"] = proc
+
+            def reader():
+                try:
+                    for raw in proc.stdout:
+                        if stop.is_set():
+                            break
+                        clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', raw)
+                        clean = re.sub(r'\x1b\][^\x07]*\x07', '', clean)
+                        clean = clean.replace('\r', '')
+                        clean = self._scrub_secrets(clean)
+                        if not clean.strip():
+                            continue
+                        if not clean.endswith("\n"):
+                            clean += "\n"
+                        GLib.idle_add(append_output, clean)
+                        if not state["url"]:
+                            m = TIDAL_LOGIN_URL_RE.search(clean)
+                            if m:
+                                GLib.idle_add(on_url_found,
+                                              m.group(0).rstrip('.,);]'))
+                except Exception:
+                    pass
+
+            threading.Thread(target=reader, daemon=True).start()
+
+            start_ts = time.time()
+            success = False
+            timed_out = False
+            while True:
+                if stop.is_set():
+                    break
+                st = self._tidal_token_status(cfg_path)
+                if st["access"] or st["refresh"]:
+                    success = True
+                    break
+                if proc.poll() is not None:
+                    st = self._tidal_token_status(cfg_path)
+                    success = st["access"] or st["refresh"]
+                    break
+                if time.time() - start_ts > 240:
+                    timed_out = True
+                    break
+                time.sleep(0.5)
+
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except Exception:
+                        proc.kill()
+            except Exception:
+                pass
+
+            GLib.idle_add(finish_worker, success, timed_out)
+
+        def on_start(_b):
+            if state["running"]:
+                return
+            if not os.path.exists(cfg_path):
+                set_status("streamrip config.toml not found — create it "
+                           "first.", "error")
+                return
+            if not self._find_rip_path():
+                set_status("rip (streamrip) was not found in PATH. Install "
+                           "streamrip first.", "error")
+                return
+            stop.clear()
+            state["url"] = None
+            state["running"] = True
+            open_btn.set_sensitive(False)
+            start_btn.set_sensitive(False)
+            test_btn.set_sensitive(False)
+            url_lbl.set_markup("")
+            out_view.get_buffer().set_text("")
+            set_status("Starting streamrip… a TIDAL login link should appear "
+                       "below shortly.", "info")
+            threading.Thread(target=worker, daemon=True).start()
+
+        def on_open(_b):
+            if state["url"]:
+                try:
+                    webbrowser.open(state["url"])
+                except Exception as exc:
+                    set_status(f"Could not open browser: {exc}", "error")
+
+        def on_test(_b):
+            if not self._find_rip_path():
+                set_status("rip (streamrip) was not found in PATH. Install "
+                           "streamrip first.", "error")
+                return
+            if not os.path.exists(cfg_path):
+                set_status("streamrip config.toml not found — create it "
+                           "first.", "warn")
+                return
+            refresh_token_status()
+
+        start_btn.connect("clicked", on_start)
+        open_btn.connect("clicked", on_open)
+        test_btn.connect("clicked", on_test)
+
+        if not os.path.exists(cfg_path):
+            set_status(
+                "streamrip config.toml was not found. Create it before "
+                "logging in.", "warn")
+            show_config_reset()
+        else:
+            refresh_token_status()
+
+        dlg.show_all()
+
+        def on_response(_d, _r):
+            stop.set()
+            p = state.get("proc")
+            if p is not None and p.poll() is None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+
+        dlg.connect("response", on_response)
+        dlg.run()
+        stop.set()
+        p = state.get("proc")
+        if p is not None and p.poll() is None:
+            try:
+                p.terminate()
+            except Exception:
+                pass
+        dlg.destroy()
+        return False
 
     def _show_credentials_dialog(self, *_):
         RESP_TEST = 10
@@ -1950,12 +2367,22 @@ class AurynApp:
                 ), False, False, 0)
                 body.pack_start(note(
                     '<span foreground="#888888" size="small">'
-                    'TIDAL uses web/device authentication. Start a TIDAL '
-                    'download once and follow the on-screen device-login '
-                    'prompt, or run <tt>rip url &lt;tidal-link&gt;</tt> in a '
-                    'terminal to complete the TIDAL login flow. Auryn cannot '
-                    'store a TIDAL email/password.</span>'
+                    'TIDAL uses web/device authentication. Auryn can guide '
+                    'you through it: streamrip prints a login link, you '
+                    'approve this device in your browser, and streamrip '
+                    'stores and refreshes the tokens in its own config.toml. '
+                    'Auryn never stores a TIDAL password.</span>'
                 ), False, False, 0)
+                tidal_btn = Gtk.Button(label="TIDAL Setup…")
+                tidal_btn.get_style_context().add_class("neutral-btn")
+                tidal_btn.set_halign(Gtk.Align.START)
+
+                def on_tidal_setup(_b):
+                    GLib.idle_add(self._show_tidal_setup_dialog)
+                    dlg.response(Gtk.ResponseType.CANCEL)
+
+                tidal_btn.connect("clicked", on_tidal_setup)
+                body.pack_start(tidal_btn, False, False, 0)
                 state["entries"] = {}
 
             body.show_all()
@@ -2000,8 +2427,13 @@ class AurynApp:
                         msg, kind = ("No Deezer ARL found in config.toml. "
                                      "Save it first.", "warn")
                 else:
-                    msg, kind = ("TIDAL uses web/device authentication; "
-                                 "nothing to test here.", "info")
+                    st = self._tidal_token_status(cfg_path)
+                    if st["access"] or st["refresh"]:
+                        msg, kind = ("TIDAL tokens present in config.toml "
+                                     "(values hidden).", "ok")
+                    else:
+                        msg, kind = ("No TIDAL tokens in config.toml. Use "
+                                     "TIDAL Setup… to log in.", "warn")
                 if not rip_ok:
                     msg += "  Note: rip was not found in PATH."
                     if kind == "ok":
@@ -2020,8 +2452,8 @@ class AurynApp:
 
                 if service == "tidal":
                     set_status(
-                        "TIDAL has no email/password to save. Use the device "
-                        "login flow described above.", "info")
+                        "TIDAL has no email/password to save. Use the "
+                        "TIDAL Setup… button to log in.", "info")
                     continue
 
                 entries = state["entries"]
