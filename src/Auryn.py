@@ -1459,6 +1459,12 @@ class AurynApp:
         env["PYTHONUNBUFFERED"] = "1"
         env["TERM"] = "xterm-256color"
         env["FORCE_COLOR"] = "1"
+        # streamrip prints Unicode track/artist names to stdout. On Windows the
+        # default process encoding is cp1252, so streamrip itself raises
+        # UnicodeEncodeError ('charmap' codec). Forcing UTF-8 mode in the child
+        # is a no-op on Linux and prevents the crash on Windows.
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
 
         if IS_WINDOWS:
             self._run_download_windows(rip_path, url, env)
@@ -1542,6 +1548,8 @@ class AurynApp:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
                 env=env,
                 creationflags=creation_flags,
@@ -2363,6 +2371,10 @@ class AurynApp:
 
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
+            # Same Windows cp1252 issue as the download path: force UTF-8 mode
+            # in the child so streamrip can print Unicode without crashing.
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
             creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
                              if IS_WINDOWS else 0)
             try:
@@ -2370,6 +2382,7 @@ class AurynApp:
                     [rip, "url", TIDAL_LOGIN_PROBE_URL],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL, text=True, bufsize=1,
+                    encoding="utf-8", errors="replace",
                     env=env, creationflags=creationflags,
                 )
             except Exception as exc:
