@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.errors import parse_streamrip_error
 from core.status import build_status_markup
 from core import tidal_auth
+from core import metadata
 
 APP_NAME = "Auryn"
 APP_VERSION = "0.1.1"
@@ -958,73 +959,126 @@ class AurynApp:
         self._run_download(url, quality)
 
     # ── Métadonnées ───────────────────────────────────────────────────────────
+    #
+    # PROTECTED UX SURFACE — the right-side album sidebar (cover art + artist /
+    # album / quality / track count / UPC / release date) is a critical,
+    # user-facing feature. It must NEVER crash the UI or the streamrip log
+    # pump, even with partial/None API payloads or a renamed .ui widget.
+    #
+    # Rules for anyone touching this section:
+    #   * Route every sidebar text write through self._set_meta(); never call
+    #     a label's .set_markup() directly from parsing code.
+    #   * Parse/normalize API payloads in core.metadata (GTK-free, tested).
+    #   * If cover art is missing/fails, leave the existing placeholder.
+    # See tests/test_metadata.py for the regression guarantees.
+
+    def _get_meta_text(self, key):
+        """Read a sidebar label's current text, tolerating a missing widget."""
+        widget = self._meta.get(key)
+        if widget is None:
+            return ""
+        try:
+            return widget.get_text()
+        except Exception:
+            return ""
+
+    def _set_meta(self, key, value, overwrite=True, limit=metadata.META_MAX_LEN):
+        """Safely write *value* into the sidebar label for *key*.
+
+        Defensive by design:
+          * unknown key / renamed-or-missing widget  -> no-op (never raises)
+          * empty / falsy value                      -> keep placeholder
+          * overwrite=False                          -> only fill an empty
+            field (matches the log-scraping "don't clobber" behaviour)
+
+        A single broken widget must not take down metadata parsing or the
+        streamrip output pump, so the GTK call is guarded too.
+        """
+        markup = metadata.build_meta_markup(value, limit)
+        if markup is None:
+            return
+        widget = self._meta.get(key)
+        if widget is None:
+            return
+        if not overwrite:
+            current = self._get_meta_text(key)
+            if current not in ("—", ""):
+                return
+        try:
+            widget.set_markup(markup)
+        except Exception:
+            pass
 
     def _apply_deezer_meta(self, data):
-        def sm(key, value):
-            if value:
-                txt = str(value).strip()[:28].replace("&","&amp;").replace("<","&lt;")
-                self._meta[key].set_markup(f'<span foreground="#e8e8e8" size="small">{txt}</span>')
-        artist = data.get("artist", {}).get("name", "")
-        album  = data.get("title", "")
-        sm("Album Artist",  artist)
-        sm("Album",         album)
-        sm("Total Tracks",  data.get("nb_tracks", ""))
-        sm("UPC",           data.get("upc", ""))
-        sm("Release Date",  data.get("release_date", ""))
-        sm("Album Quality", "FLAC 16-bit / 44.1 kHz")
-        title = self._format_history_title(artist, album)
+        fields = metadata.deezer_album_fields(data)
+        # Deezer values are kept slightly shorter to fit the historical layout.
+        self._set_meta("Album Artist",  fields["artist"],       limit=28)
+        self._set_meta("Album",         fields["album"],        limit=28)
+        self._set_meta("Total Tracks",  fields["total_tracks"], limit=28)
+        self._set_meta("UPC",           fields["upc"],          limit=28)
+        self._set_meta("Release Date",  fields["release_date"], limit=28)
+        self._set_meta("Album Quality", fields["quality"],      limit=28)
+        title = self._format_history_title(fields["artist"], fields["album"])
         self._history_set_title(self._current_history_entry, title)
         self._queue_set_title(self._current_queue_item, title)
-        cover_url = data.get("cover_xl") or data.get("cover_big") or data.get("cover_medium")
-        if cover_url:
-            threading.Thread(target=self._load_cover, args=(cover_url,), daemon=True).start()
+        if fields["cover_url"]:
+            threading.Thread(target=self._load_cover,
+                              args=(fields["cover_url"],), daemon=True).start()
 
     def _apply_qobuz_meta(self, data):
-        def sm(key, value):
-            if value:
-                txt = str(value).strip()[:30].replace("&","&amp;").replace("<","&lt;")
-                self._meta[key].set_markup(f'<span foreground="#e8e8e8" size="small">{txt}</span>')
-        artist = data.get("artist", {}).get("name", "") or data.get("performer", {}).get("name", "")
-        album  = data.get("title", "")
-        sm("Album Artist",  artist)
-        sm("Album",         album)
-        sm("Total Tracks",  data.get("tracks_count", data.get("tracks", {}).get("total", "")))
-        sm("UPC",           data.get("upc", ""))
-        sm("Release Date",  (data.get("release_date_original") or data.get("released_at") or "")[:10])
-        title = self._format_history_title(artist, album)
+        fields = metadata.qobuz_album_fields(data)
+        self._set_meta("Album Artist",  fields["artist"])
+        self._set_meta("Album",         fields["album"])
+        self._set_meta("Total Tracks",  fields["total_tracks"])
+        self._set_meta("UPC",           fields["upc"])
+        self._set_meta("Release Date",  fields["release_date"])
+        self._set_meta("Album Quality", fields["quality"])
+        title = self._format_history_title(fields["artist"], fields["album"])
         self._history_set_title(self._current_history_entry, title)
         self._queue_set_title(self._current_queue_item, title)
-        max_q = data.get("maximum_sampling_rate", 0)
-        max_b = data.get("maximum_bit_depth", 0)
-        if max_q and max_b:
-            sm("Album Quality", f"FLAC {max_b}-bit / {max_q} kHz")
-        elif data.get("hires_streamable"):
-            sm("Album Quality", "Hi-Res FLAC")
-        img = data.get("image", {})
-        cover_url = img.get("large") or img.get("small") or img.get("thumbnail", "")
-        if cover_url:
-            cover_url = re.sub(r'_\d+\.jpg', '_max.jpg', cover_url)
-            cover_fallback = re.sub(r'_\d+\.jpg', '_600.jpg', cover_url.replace('_max.jpg', '_600.jpg'))
+        if fields["cover_url"]:
             threading.Thread(
                 target=self._load_cover_with_fallback,
-                args=(cover_url, cover_fallback), daemon=True
+                args=(fields["cover_url"], fields["cover_fallback"]),
+                daemon=True,
             ).start()
+
+    def _set_cover_present_label(self):
+        """Brighten the caption to signal that real cover art is shown."""
+        if self.cover_lbl is None:
+            return
+        try:
+            self.cover_lbl.set_markup(
+                '<span foreground="#888888" size="small" letter_spacing="200">COVER</span>')
+        except Exception:
+            pass
+
+    def _show_cover_pixbuf(self, pb):
+        """Display downloaded cover art, or fall back to the placeholder.
+
+        Always leaves the sidebar in a stable state: a successful pixbuf is
+        shown with the brightened caption; a failure keeps the existing
+        neutral placeholder tile and caption rather than a blank slot.
+        """
+        if pb and self.cover_img is not None:
+            try:
+                self.cover_img.set_from_pixbuf(pb)
+                self._set_cover_present_label()
+                return
+            except Exception:
+                pass
+        self._set_placeholder_cover()
+        self._set_cover_placeholder_label()
 
     def _load_cover_with_fallback(self, url1, url2):
         pb = download_cover(url1, size=185)
         if not pb:
             pb = download_cover(url2, size=185)
-        if pb:
-            GLib.idle_add(self.cover_img.set_from_pixbuf, pb)
-            GLib.idle_add(self.cover_lbl.set_markup,
-                          '<span foreground="#888888" size="small" letter_spacing="200">COVER</span>')
+        GLib.idle_add(self._show_cover_pixbuf, pb)
 
     def _load_cover(self, cover_url):
         pb = download_cover(cover_url, size=185)
-        if pb:
-            GLib.idle_add(self.cover_img.set_from_pixbuf, pb)
-            GLib.idle_add(self.cover_lbl.set_markup,
-                          '<span foreground="#888888" size="small" letter_spacing="200">COVER</span>')
+        GLib.idle_add(self._show_cover_pixbuf, pb)
 
     # ── Lancement streamrip ───────────────────────────────────────────────────
 
@@ -1673,12 +1727,10 @@ class AurynApp:
         self._log(line, tag)
 
     def _extract_meta_from_log(self, line):
+        # Log scraping only *fills* empty fields — it must never clobber the
+        # richer values already pulled from the API, hence overwrite=False.
         def sm(key, value):
-            if value:
-                txt = str(value).strip()[:30].replace("&","&amp;").replace("<","&lt;")
-                current = self._meta[key].get_text()
-                if current == "—" or not current:
-                    self._meta[key].set_markup(f'<span foreground="#e8e8e8" size="small">{txt}</span>')
+            self._set_meta(key, value, overwrite=False)
 
         m = re.search(r'^\s*Downloading\s+(.+?)\s*[─━—\-]{3,}\s*$', line)
         if m:
@@ -1709,7 +1761,7 @@ class AurynApp:
         if m:
             track_name = m.group(1).strip()
             self._set_status(f"🎵  {track_name[:80]}", "track")
-            artist = self._meta["Album Artist"].get_text()
+            artist = self._get_meta_text("Album Artist")
             if artist != "—" and artist:
                 threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, track_name), daemon=True).start()
 
@@ -1719,7 +1771,7 @@ class AurynApp:
         m = re.search(r'(?:UPC|Barcode)[:\s]+(\d{8,14})', line, re.I)
         if m: sm("UPC", m.group(1))
 
-        if self._meta["Album Quality"].get_text() in ("—", ""):
+        if self._get_meta_text("Album Quality") in ("—", ""):
             for pat in [
                 r'(FLAC\s+\d+\s*bit.{1,20}kHz)',
                 r'(\d+\s*bit\s*/\s*[\d.]+\s*kHz)',
@@ -1822,16 +1874,41 @@ class AurynApp:
         self.status_lbl.set_markup(build_status_markup(text, style))
 
     def _reset_meta(self):
+        # Tolerate any missing/renamed label so a UI refactor degrades the
+        # sidebar gracefully instead of crashing the whole reset path.
         for lbl in self._meta.values():
-            lbl.set_markup('<span foreground="#333333" size="small">—</span>')
+            if lbl is None:
+                continue
+            try:
+                lbl.set_markup('<span foreground="#333333" size="small">—</span>')
+            except Exception:
+                pass
         self._set_lyrics('<span foreground="#333333" size="small">—</span>')
         self._set_placeholder_cover()
-        self.speed_lbl.set_markup("")
+        self._set_cover_placeholder_label()
+        if self.speed_lbl is not None:
+            self.speed_lbl.set_markup("")
 
     def _set_placeholder_cover(self):
-        pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 185, 185)
-        pb.fill(0x161616ff)
-        self.cover_img.set_from_pixbuf(pb)
+        """Show the neutral placeholder tile (startup, reset, cover failure)."""
+        if self.cover_img is None:
+            return
+        try:
+            pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 185, 185)
+            pb.fill(0x161616ff)
+            self.cover_img.set_from_pixbuf(pb)
+        except Exception:
+            pass
+
+    def _set_cover_placeholder_label(self):
+        """Restore the dim 'COVER' caption used when no art is shown."""
+        if self.cover_lbl is None:
+            return
+        try:
+            self.cover_lbl.set_markup(
+                '<span foreground="#555555" size="small" letter_spacing="200">COVER</span>')
+        except Exception:
+            pass
 
     def _streamrip_config_path(self):
         # Mirrors streamrip's own click.get_app_dir("streamrip") resolution
