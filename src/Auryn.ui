@@ -328,6 +328,22 @@
                       </packing>
                     </child>
                     <child>
+                      <object class="GtkButton" id="btn_copy_log">
+                        <property name="label">Copy Log</property>
+                        <property name="tooltip-text">Copy the full log panel contents to the clipboard</property>
+                        <property name="can-focus">False</property>
+                        <property name="receives-default">False</property>
+                        <style>
+                          <class name="neutral-btn"/>
+                        </style>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">False</property>
+                        <property name="position">4</property>
+                      </packing>
+                    </child>
+                    <child>
                       <object class="GtkButton" id="btn_open_downloads_folder">
                         <property name="label">Open Downloads Folder</property>
                         <property name="tooltip-text">Open the configured download folder in your file manager</property>
@@ -340,7 +356,7 @@
                       <packing>
                         <property name="expand">False</property>
                         <property name="fill">False</property>
-                        <property name="position">4</property>
+                        <property name="position">5</property>
                       </packing>
                     </child>
                   </object>

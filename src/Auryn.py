@@ -27,6 +27,7 @@ from core.status import build_status_markup
 from core import tidal_auth
 from core import metadata
 from core import streamrip_status
+from core import log_format
 
 APP_NAME = "Auryn"
 APP_VERSION = "0.1.1"
@@ -357,6 +358,7 @@ class AurynApp:
         self.btn_open      = self.builder.get_object("btn_open_folder")
         self.btn_open_downloads = self.builder.get_object("btn_open_downloads_folder")
         self.btn_log       = self.builder.get_object("btn_open_log")
+        self.btn_copy_log  = self.builder.get_object("btn_copy_log")
         self.cb_clear_cache = self.builder.get_object("cb_clear_cache")
         self.folder_lbl    = self.builder.get_object("folder_lbl")
         self.status_lbl    = self.builder.get_object("status_lbl")
@@ -427,6 +429,8 @@ class AurynApp:
         self.btn_open.set_can_focus(True)
         self.btn_open_downloads.set_can_focus(True)
         self.btn_log.set_can_focus(True)
+        if self.btn_copy_log is not None:
+            self.btn_copy_log.set_can_focus(True)
         self.btn_about.set_can_focus(True)
         self.btn_setup.set_can_focus(True)
         self.btn_credentials.set_can_focus(True)
@@ -461,6 +465,8 @@ class AurynApp:
         self.btn_open.connect("clicked", self._open_folder)
         self.btn_open_downloads.connect("clicked", self._open_downloads_folder)
         self.btn_log.connect("clicked", self._open_log_folder)
+        if self.btn_copy_log is not None:
+            self.btn_copy_log.connect("clicked", self._copy_log_to_clipboard)
         self.btn_add_queue.connect("clicked", self._on_add_to_queue)
         self.btn_clear_queue.connect("clicked", self._on_clear_queue)
 
@@ -1840,6 +1846,83 @@ class AurynApp:
             parts.append(f"{self._dl_skip_count} skipped")
         return f" ({', '.join(parts)})" if parts else ""
 
+    def _current_log_text(self):
+        """Return the full plain text currently in the log buffer.
+
+        Used by the error-summary builder and the Copy Log action so both
+        see exactly what the user sees in the panel.
+        """
+        try:
+            buf = self.log_view.get_buffer()
+            return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        except Exception:
+            return ""
+
+    def _metadata_loaded(self):
+        """True if the right-side sidebar shows at least one real value.
+
+        Used by the error summary so users know whether the metadata /
+        cover surface succeeded even though some tracks failed. Reads
+        from the sidebar labels — never touches the protected widget
+        layout, only inspects current text.
+        """
+        for key in self._meta:
+            text = self._get_meta_text(key)
+            if text and text not in ("—", ""):
+                return True
+        return False
+
+    def _build_download_summary(self):
+        """Compose the concise, multi-line summary shown above the log.
+
+        Combines the streamrip-status tallies (counted as the download
+        runs) with a pattern breakdown computed from the buffered log
+        text. Returns ``""`` when the run was clean.
+        """
+        log_text = self._current_log_text()
+        counts = log_format.count_error_patterns(log_text)
+        return log_format.build_error_summary(
+            counts,
+            error_count=self._dl_error_count,
+            skip_count=self._dl_skip_count,
+            invalid_url=self._dl_invalid_url,
+            metadata_loaded=self._metadata_loaded(),
+        )
+
+    def _log_error_summary(self):
+        """Insert the concise error summary into the log, framed clearly.
+
+        No-op when no errors were detected. The frame uses the existing
+        ``dim`` tag for borders and ``error`` for the message body so the
+        block stands out without redesigning the log panel.
+        """
+        summary = self._build_download_summary()
+        if not summary:
+            return
+        border = "─" * 60 + "\n"
+        self._log("\n" + border, "dim")
+        self._log("⚠  Error summary\n", "error")
+        self._log(summary + "\n", "error")
+        self._log(border, "dim")
+
+    def _copy_log_to_clipboard(self, *_):
+        """Copy the full log buffer to the system clipboard.
+
+        Mirrors the diagnostics dialog's Copy action so users can share
+        the captured run output without re-opening Diagnostics.
+        """
+        text = self._current_log_text()
+        if not text:
+            self._set_status("ℹ  Log is empty — nothing to copy.", "info")
+            return
+        try:
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(text, -1)
+            clipboard.store()
+            self._set_status("📋  Log copied to clipboard.", "ok")
+        except Exception as exc:
+            self._set_status(f"❌  Could not copy log: {exc}", "error")
+
     def _finish_full_success(self):
         self._set_status("✅  Download complete!", "ok")
         self.progress_bar.set_fraction(1.0)
@@ -1855,6 +1938,7 @@ class AurynApp:
         self._log(
             "\n⚠  Download finished with errors — check the log."
             f"{self._streamrip_signal_summary()}\n", "error")
+        self._log_error_summary()
         # Some tracks may still have landed; keep the folder link if one
         # was created so partial results stay reachable.
         folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot)
@@ -1868,6 +1952,7 @@ class AurynApp:
         self._log(
             "💡  Try opening the link in your browser and paste the "
             "final service URL.\n", "info")
+        self._log_error_summary()
         self._history_set_status(self._current_history_entry, "Failed")
         self._queue_set_status(self._current_queue_item, "Failed")
 
@@ -1952,12 +2037,19 @@ class AurynApp:
                 "info")
 
     def _log(self, text, tag=None):
+        # Sanitise + soft-wrap before inserting so stray control bytes,
+        # mojibake or unbroken URLs never make the panel unreadable. The
+        # original payload is preserved (paths, errors stay copy-able);
+        # this is purely a display-side cleanup.
+        display = log_format.prepare_for_display(text)
+        if not display:
+            return
         buf = self.log_view.get_buffer()
         end = buf.get_end_iter()
         if tag:
-            buf.insert_with_tags_by_name(end, text, tag)
+            buf.insert_with_tags_by_name(end, display, tag)
         else:
-            buf.insert(end, text)
+            buf.insert(end, display)
         adj = self._scroll.get_vadjustment()
         adj.set_value(adj.get_upper() - adj.get_page_size())
 
