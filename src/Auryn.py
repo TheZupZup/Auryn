@@ -26,6 +26,7 @@ from core.errors import parse_streamrip_error
 from core.status import build_status_markup
 from core import tidal_auth
 from core import metadata
+from core import streamrip_status
 
 APP_NAME = "Auryn"
 APP_VERSION = "0.1.1"
@@ -412,6 +413,10 @@ class AurynApp:
         self._tidal_auth_required   = False
         self._tidal_auth_corrupted  = False
         self._tb_noise_notified     = False
+        self._dl_error_count        = 0
+        self._dl_skip_count         = 0
+        self._dl_invalid_url        = False
+        self._dl_finished_marker    = False
         self._cfg_fingerprint_pre   = None
 
         # ── Forcer can-focus sur les widgets interactifs ──
@@ -591,6 +596,7 @@ class AurynApp:
         return {
             "Completed":   "#87a556",
             "Downloading": "#FF6B35",
+            "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
         }.get(status, "#aaaaaa")
 
@@ -716,7 +722,8 @@ class AurynApp:
 
         box.pack_start(left, True, True, 0)
 
-        if entry["status"] == "Completed":
+        if entry["status"] == "Completed" or (
+                entry["status"] == "Warning" and entry.get("folder")):
             btn = Gtk.Button(label="Open Folder")
             btn.get_style_context().add_class("neutral-btn")
             btn.set_valign(Gtk.Align.CENTER)
@@ -752,6 +759,7 @@ class AurynApp:
             "Queued":      "#888888",
             "Downloading": "#FF6B35",
             "Completed":   "#87a556",
+            "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
         }.get(status, "#aaaaaa")
 
@@ -920,6 +928,7 @@ class AurynApp:
         self._track_done       = 0
         self._total_tracks     = 0
         self._last_known_error = None
+        self._reset_streamrip_signals()
         self._set_status("⏳  Fetching album info...", "info")
         self._set_lyrics('<span foreground="#555555"><i>Lyrics appear here once a track is identified.</i></span>')
         quality = self._get_quality()
@@ -1666,6 +1675,10 @@ class AurynApp:
     def _parse_line(self, line):
         lo = line.lower()
 
+        # Tally success/error signals before any log-noise suppression so a
+        # collapsed traceback still counts toward the final outcome.
+        self._track_streamrip_signals(line)
+
         # TIDAL token_expiry crash: streamrip raises ValueError on
         # float(token_expiry) when it is empty/corrupt. Scoped to a TIDAL
         # download exactly like the auth-error detection below.
@@ -1783,26 +1796,107 @@ class AurynApp:
 
     # ── Fin ───────────────────────────────────────────────────────────────────
 
-    def _finish(self, success):
-        if success:
-            self._set_status("✅  Download complete!", "ok")
-            self.progress_bar.set_fraction(1.0)
-            self._log("\n✅  All downloads finished!\n", "ok")
-            folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot) or self._dest_folder
-            self._history_set_status(self._current_history_entry, "Completed", folder=folder)
-            self._queue_set_status(self._current_queue_item, "Completed")
-        else:
-            code = self._process.returncode if self._process else -1
-            if code != -15:
-                status_msg = self._last_known_error or "❌  Download failed — check the log."
-                self._set_status(status_msg, "error")
-                self._log("\n❌  Download failed.\n", "error")
-            self._history_set_status(self._current_history_entry, "Failed")
-            self._queue_set_status(self._current_queue_item, "Failed")
+    def _reset_streamrip_signals(self):
+        """Clear the per-download success/error tallies."""
+        self._dl_error_count     = 0
+        self._dl_skip_count      = 0
+        self._dl_invalid_url     = False
+        self._dl_finished_marker = False
 
-        self._post_download_config_audit()
+    def _track_streamrip_signals(self, line):
+        """Accumulate streamrip success/error signals from one output line.
+
+        Runs before any log-noise suppression so a collapsed traceback is
+        still counted toward the final outcome.
+        """
+        if streamrip_status.line_says_finished(line):
+            self._dl_finished_marker = True
+        if streamrip_status.line_is_invalid_url(line):
+            self._dl_invalid_url = True
+            return
+        if streamrip_status.line_is_skip(line):
+            self._dl_skip_count += 1
+            return
+        if streamrip_status.line_is_error(line):
+            self._dl_error_count += 1
+
+    def _compute_download_outcome(self, success):
+        """Refine streamrip's exit code with the observed log signals."""
+        return streamrip_status.classify_outcome(
+            finished=self._dl_finished_marker,
+            error_count=self._dl_error_count,
+            skip_count=self._dl_skip_count,
+            invalid_url=self._dl_invalid_url,
+            process_ok=success,
+        )
+
+    def _streamrip_signal_summary(self):
+        """Short '(N track error(s), M skipped)' suffix, or '' if clean."""
+        parts = []
+        if self._dl_error_count:
+            parts.append(f"{self._dl_error_count} track "
+                         f"error{'s' if self._dl_error_count != 1 else ''}")
+        if self._dl_skip_count:
+            parts.append(f"{self._dl_skip_count} skipped")
+        return f" ({', '.join(parts)})" if parts else ""
+
+    def _finish_full_success(self):
+        self._set_status("✅  Download complete!", "ok")
+        self.progress_bar.set_fraction(1.0)
+        self._log("\n✅  All downloads finished!\n", "ok")
+        folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot) or self._dest_folder
+        self._history_set_status(self._current_history_entry, "Completed", folder=folder)
+        self._queue_set_status(self._current_queue_item, "Completed")
+
+    def _finish_with_warnings(self):
+        self.progress_bar.set_fraction(1.0)
+        self._set_status(
+            "⚠  Download finished with errors — check the log.", "error")
+        self._log(
+            "\n⚠  Download finished with errors — check the log."
+            f"{self._streamrip_signal_summary()}\n", "error")
+        # Some tracks may still have landed; keep the folder link if one
+        # was created so partial results stay reachable.
+        folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot)
+        self._history_set_status(self._current_history_entry, "Warning", folder=folder)
+        self._queue_set_status(self._current_queue_item, "Warning")
+
+    def _finish_invalid_url(self):
+        self._set_status(
+            "❌  streamrip rejected the URL — see the log.", "error")
+        self._log("\n❌  streamrip could not use this URL.\n", "error")
+        self._log(
+            "💡  Try opening the link in your browser and paste the "
+            "final service URL.\n", "info")
+        self._history_set_status(self._current_history_entry, "Failed")
+        self._queue_set_status(self._current_queue_item, "Failed")
+
+    def _finish_failed(self):
+        code = self._process.returncode if self._process else -1
+        if code != -15:
+            status_msg = self._last_known_error or "❌  Download failed — check the log."
+            self._set_status(status_msg, "error")
+            self._log("\n❌  Download failed.\n", "error")
+        self._history_set_status(self._current_history_entry, "Failed")
+        self._queue_set_status(self._current_queue_item, "Failed")
+
+    def _finish(self, success):
         user_stopped = (self._process is not None
                         and self._process.returncode == -15)
+        if user_stopped:
+            self._finish_failed()
+        else:
+            outcome = self._compute_download_outcome(success)
+            if outcome == streamrip_status.SUCCESS:
+                self._finish_full_success()
+            elif outcome == streamrip_status.PARTIAL:
+                self._finish_with_warnings()
+            elif outcome == streamrip_status.INVALID_URL:
+                self._finish_invalid_url()
+            else:
+                self._finish_failed()
+
+        self._post_download_config_audit()
         tidal_corrupted = (
             not success and self._tidal_auth_corrupted and not user_stopped)
         tidal_blocked = (
