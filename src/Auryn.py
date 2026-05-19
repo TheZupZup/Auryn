@@ -2183,11 +2183,16 @@ class AurynApp:
         ), False, False, 0)
         outer.pack_start(note(
             '<span foreground="#888888" size="small">'
-            'TIDAL does not use an email/password in streamrip. It signs in '
-            'with a <b>web/device login</b>: streamrip prints a link, you open '
-            'it in your browser and approve this device. streamrip then '
-            'stores and refreshes the access/refresh tokens in its own '
-            'config.toml — Auryn never sees or stores your TIDAL '
+            '<b>Why no email/password?</b> TIDAL’s API only offers an '
+            'OAuth 2.0 <b>device authorization</b> sign-in (the “approve '
+            'this device” browser step). It exposes no password-grant '
+            'endpoint, so streamrip — and therefore Auryn — cannot '
+            'accept a TIDAL email/password the way Qobuz can. This is a TIDAL '
+            'platform limitation, not an Auryn restriction.\n\n'
+            'Instead TIDAL uses a <b>web/device login</b>: streamrip prints a '
+            'link, you open it in your browser and approve this device. '
+            'streamrip then stores and refreshes the access/refresh tokens in '
+            'its own config.toml — Auryn never sees or stores a TIDAL '
             'password.</span>'
         ), False, False, 0)
 
@@ -2215,12 +2220,14 @@ class AurynApp:
         start_btn = Gtk.Button(label="Start TIDAL login")
         open_btn = Gtk.Button(label="Open login URL")
         test_btn = Gtk.Button(label="Test TIDAL login")
-        for _b in (start_btn, open_btn, test_btn):
+        repair_btn = Gtk.Button(label="Repair TIDAL session")
+        for _b in (start_btn, open_btn, test_btn, repair_btn):
             _b.get_style_context().add_class("neutral-btn")
         open_btn.set_sensitive(False)
         btn_row.pack_start(start_btn, False, False, 0)
         btn_row.pack_start(open_btn, False, False, 0)
         btn_row.pack_start(test_btn, False, False, 0)
+        btn_row.pack_start(repair_btn, False, False, 0)
         outer.pack_start(btn_row, False, False, 0)
 
         out_view = Gtk.TextView()
@@ -2311,6 +2318,7 @@ class AurynApp:
             state["running"] = False
             start_btn.set_sensitive(True)
             test_btn.set_sensitive(True)
+            repair_btn.set_sensitive(True)
             kind = outcome.get("state")
             if kind == "ok":
                 set_status(
@@ -2482,6 +2490,7 @@ class AurynApp:
             open_btn.set_sensitive(False)
             start_btn.set_sensitive(False)
             test_btn.set_sensitive(False)
+            repair_btn.set_sensitive(False)
             url_lbl.set_markup("")
             out_view.get_buffer().set_text("")
             set_status("Starting streamrip… a TIDAL login link should appear "
@@ -2506,9 +2515,36 @@ class AurynApp:
                 return
             refresh_token_status()
 
+        def on_repair(_b):
+            if state["running"]:
+                return
+            if not os.path.exists(cfg_path):
+                set_status("streamrip config.toml not found — nothing to "
+                           "repair. Create it first.", "warn")
+                return
+            ok, err, cleared = tidal_auth.clear_broken_tidal_auth(
+                cfg_path, force=True)
+            if ok:
+                GLib.idle_add(
+                    self._auth_log,
+                    "🛠  TIDAL session reset — cleared ["
+                    + (", ".join(cleared) if cleared else "no fields")
+                    + "] in config.toml; every other setting was "
+                    "preserved.\n", "ok")
+                state["url"] = None
+                open_btn.set_sensitive(False)
+                url_lbl.set_markup("")
+                set_status(
+                    "TIDAL session reset (all other settings preserved). "
+                    "Click 'Start TIDAL login' to sign in again.", "ok")
+            else:
+                set_status(err or "Could not repair the TIDAL session.",
+                           "error")
+
         start_btn.connect("clicked", on_start)
         open_btn.connect("clicked", on_open)
         test_btn.connect("clicked", on_test)
+        repair_btn.connect("clicked", on_repair)
 
         if not os.path.exists(cfg_path):
             set_status(
@@ -2751,27 +2787,49 @@ class AurynApp:
             else:  # tidal
                 body.pack_start(note(
                     '<span foreground="#FFB300" size="small">'
-                    'TIDAL does not support email/password login in '
-                    'streamrip.</span>'
+                    'TIDAL has no email/password login — it cannot be set up '
+                    'like Qobuz.</span>'
                 ), False, False, 0)
                 body.pack_start(note(
                     '<span foreground="#888888" size="small">'
-                    'TIDAL uses web/device authentication. Auryn can guide '
-                    'you through it: streamrip prints a login link, you '
-                    'approve this device in your browser, and streamrip '
-                    'stores and refreshes the tokens in its own config.toml. '
-                    'Auryn never stores a TIDAL password.</span>'
+                    '<b>Why?</b> TIDAL’s API only offers an OAuth 2.0 '
+                    '<b>device authorization</b> sign-in (the “approve this '
+                    'device” browser step). It has no password-grant endpoint, '
+                    'so streamrip — and therefore Auryn — cannot accept a TIDAL '
+                    'email/password the way it does for Qobuz. This is a TIDAL '
+                    'platform limitation, not an Auryn restriction. (Qobuz uses '
+                    'email/password; Deezer uses an ARL token; TIDAL uses '
+                    'device login.)</span>'
+                ), False, False, 0)
+                body.pack_start(note(
+                    '<span foreground="#888888" size="small">'
+                    'Use <b>TIDAL Setup…</b> below: streamrip prints a login '
+                    'link, you approve this device in your browser, and '
+                    'streamrip stores and refreshes the tokens in its own '
+                    'config.toml. Auryn never sees or stores a TIDAL '
+                    'password. If a previous login is corrupt or keeps '
+                    'prompting, use <b>Repair TIDAL Session</b>.</span>'
                 ), False, False, 0)
                 tidal_row = Gtk.Box(
                     orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
                 tidal_row.set_halign(Gtk.Align.START)
                 tidal_btn = Gtk.Button(label="TIDAL Setup…")
+                repair_conn_btn = Gtk.Button(label="Repair TIDAL Session")
                 test_conn_btn = Gtk.Button(label="Test TIDAL Connection")
-                for _b in (tidal_btn, test_conn_btn):
+                for _b in (tidal_btn, repair_conn_btn, test_conn_btn):
                     _b.get_style_context().add_class("neutral-btn")
 
                 def on_tidal_setup(_b):
                     GLib.idle_add(self._show_tidal_setup_dialog)
+                    dlg.response(Gtk.ResponseType.CANCEL)
+
+                def on_repair_conn(_b):
+                    cfg_p = self._streamrip_config_path()
+                    if not os.path.exists(cfg_p):
+                        set_status("streamrip config.toml not found — nothing "
+                                   "to repair. Create it first.", "warn")
+                        return
+                    GLib.idle_add(self._show_tidal_auth_corrupted_dialog)
                     dlg.response(Gtk.ResponseType.CANCEL)
 
                 def on_test_conn(_b):
@@ -2787,8 +2845,10 @@ class AurynApp:
                                 self._streamrip_config_path()) + "\n", "dim")
 
                 tidal_btn.connect("clicked", on_tidal_setup)
+                repair_conn_btn.connect("clicked", on_repair_conn)
                 test_conn_btn.connect("clicked", on_test_conn)
                 tidal_row.pack_start(tidal_btn, False, False, 0)
+                tidal_row.pack_start(repair_conn_btn, False, False, 0)
                 tidal_row.pack_start(test_conn_btn, False, False, 0)
                 body.pack_start(tidal_row, False, False, 0)
                 state["entries"] = {}
