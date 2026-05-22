@@ -29,6 +29,7 @@ from core import metadata
 from core import streamrip_status
 from core import log_format
 from core import deezer
+from core import quality as qual
 
 APP_NAME = "Auryn"
 APP_VERSION = "0.1.1"
@@ -91,8 +92,11 @@ separator { background-color: #252525; }
 .history-row:hover { border-color: #333; }
 """
 
-QUALITY_LABELS = ["MP3 128", "MP3 320", "FLAC 16/44.1", "FLAC 24/96+", "Max (MQA)"]
-QUALITY_VALUES = ["0",       "1",       "2",            "3",           "4"]
+# Sourced from core.quality so the picker, the clamping rules and the log
+# messages share one definition (the GTK widget labels live in Auryn.ui and
+# match these exactly).
+QUALITY_LABELS = qual.QUALITY_LABELS
+QUALITY_VALUES = qual.QUALITY_VALUES
 
 # streamrip authenticates the TIDAL client (device/web login) before it ever
 # resolves or downloads a URL, so any syntactically valid TIDAL link is enough
@@ -1583,25 +1587,33 @@ class AurynApp:
                 {"section": "qobuz", "key": "use_auth_token",
                  "value": "true", "quote": False},
             ]
-            # Deezer only supports quality 0..2; streamrip indexes a 3-row
-            # table with this value and crashes ("list index out of range")
-            # for anything higher. Clamp the value written to [deezer] so a
-            # FLAC-24/Max selection downgrades cleanly instead of failing
-            # every track. Other services keep the requested quality.
-            deezer_quality = deezer.clamp_quality(quality)
+            # Each service implements only part of streamrip's 0–4 quality
+            # scale; writing a value above a service's maximum makes streamrip
+            # index its fixed quality table out of bounds and crash ("list
+            # index out of range") on every track (Deezer is the worst case,
+            # max 2). Clamp every section to the range core.quality says the
+            # service supports, so a Max/Hi-Res selection downgrades cleanly
+            # instead of failing. The rules live in core.quality so they are
+            # defined once rather than duplicated per call site.
             for svc in ("qobuz", "tidal", "deezer", "soundcloud"):
-                svc_quality = deezer_quality if svc == "deezer" else quality
                 edits.append({"section": svc, "key": "quality",
-                              "value": str(svc_quality), "quote": False})
+                              "value": str(qual.clamp_quality(svc, quality)),
+                              "quote": False})
 
-            if deezer.is_deezer_url(url) and deezer.quality_was_clamped(quality):
+            active_service = qual.service_for_url(url)
+            if active_service and qual.quality_was_clamped(active_service, quality):
                 GLib.idle_add(
                     self._log,
-                    "ℹ️  Deezer supports up to quality "
-                    f"{deezer.DEEZER_MAX_QUALITY} "
-                    f"({deezer.quality_label(deezer.DEEZER_MAX_QUALITY)}); "
-                    f"using {deezer_quality} for this Deezer download "
-                    f"(requested {quality}).\n", "info")
+                    "ℹ️  " + qual.clamp_message(active_service, quality) + "\n",
+                    "info")
+            elif active_service and qual.is_experimental(active_service, quality):
+                GLib.idle_add(
+                    self._log,
+                    "ℹ️  {} {} is experimental in streamrip.\n".format(
+                        qual.service_display_name(active_service),
+                        qual.quality_label(
+                            qual.clamp_quality(active_service, quality))),
+                    "info")
 
             ok, err, changed = tidal_auth.apply_streamrip_config_updates(
                 cfg, edits)

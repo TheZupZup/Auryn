@@ -28,12 +28,15 @@ import os
 import re
 import urllib.request
 
+from core import quality as _quality
+
 # streamrip's ``DeezerClient.max_quality`` (streamrip/client/deezer.py). The
 # quality table there has exactly three rows — 0 = MP3 128, 1 = MP3 320,
 # 2 = FLAC (CD quality) — and ``get_downloadable`` does ``quality_map[quality]``
 # with no bounds check, so a configured quality of 3 or 4 raises
-# ``IndexError: list index out of range`` for every track.
-DEEZER_MAX_QUALITY = 2
+# ``IndexError: list index out of range`` for every track. The supported
+# maximum and the clamping rule are defined once in :mod:`core.quality`.
+DEEZER_MAX_QUALITY = _quality.service_max_quality("deezer")
 
 # Stable, user-facing message for the streamrip provider crash. Defined once so
 # the UI and the tests share a single wording.
@@ -109,36 +112,21 @@ _BARE_HOST_RE = re.compile(
 def clamp_quality(quality):
     """Clamp *quality* into Deezer's supported 0..2 range.
 
-    Accepts ints or numeric strings; anything unparseable falls back to the
-    maximum supported quality. This is the fix that prevents streamrip's
-    ``list index out of range`` crash on Deezer.
+    Deezer-scoped wrapper over :func:`core.quality.clamp_quality`; kept for the
+    Deezer-specific call sites and tests. This is the fix that prevents
+    streamrip's ``list index out of range`` crash on Deezer.
     """
-    try:
-        q = int(str(quality).strip())
-    except (TypeError, ValueError):
-        return DEEZER_MAX_QUALITY
-    if q < 0:
-        return 0
-    if q > DEEZER_MAX_QUALITY:
-        return DEEZER_MAX_QUALITY
-    return q
+    return _quality.clamp_quality("deezer", quality)
 
 
 def quality_was_clamped(quality):
     """True if :func:`clamp_quality` would change *quality*."""
-    try:
-        return int(str(quality).strip()) != clamp_quality(quality)
-    except (TypeError, ValueError):
-        return True
+    return _quality.quality_was_clamped("deezer", quality)
 
 
 def quality_label(quality):
     """Human label for a Deezer quality level."""
-    return {
-        0: "MP3 128 kbps",
-        1: "MP3 320 kbps",
-        2: "FLAC (CD quality)",
-    }.get(quality, str(quality))
+    return _quality.quality_label(quality)
 
 
 # ── URL handling ─────────────────────────────────────────────────────────────
