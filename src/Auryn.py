@@ -28,6 +28,7 @@ from core import tidal_auth
 from core import metadata
 from core import streamrip_status
 from core import log_format
+from core import deezer
 
 APP_NAME = "Auryn"
 APP_VERSION = "0.1.1"
@@ -949,6 +950,10 @@ class AurynApp:
         self.btn_stop.set_sensitive(False)
 
     def _thread_main(self, url, quality):
+        if deezer.is_deezer_url(url):
+            url = self._prepare_deezer_url(url)
+            if url is None:
+                return  # pre-check failed; UI/queue already updated
         service, item_id = detect_service_and_id(url)
         if service == "qobuz" and item_id:
             GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
@@ -970,8 +975,107 @@ class AurynApp:
                 title = data.get("title")
                 if artist and title:
                     threading.Thread(target=self._fetch_and_apply_lyrics, args=(artist, title), daemon=True).start()
+        if deezer.is_deezer_url(url) and not self._deezer_config_ready():
+            return  # "Deezer not configured" — UI/queue already updated
         GLib.idle_add(self._set_status, "⏳  Preparing download...", "info")
         self._run_download(url, quality)
+
+    # ── Deezer pre-checks ──────────────────────────────────────────────────────
+    #
+    # streamrip only accepts a narrow set of Deezer URL forms and silently
+    # produces confusing per-track failures otherwise. These helpers normalize /
+    # resolve / validate the URL and confirm an ARL is configured BEFORE
+    # streamrip is spawned, so a bad link or missing credential fails fast with
+    # guidance instead of a mid-download crash. They run in the download worker
+    # thread; all UI work is marshalled back via GLib.idle_add.
+
+    def _prepare_deezer_url(self, url):
+        """Normalize / resolve / validate a Deezer URL before downloading.
+
+        Returns the URL to hand to streamrip, or None if the download was
+        aborted (UI + queue already updated by ``_finish_precheck_failed``).
+        """
+        info = deezer.classify_deezer_url(url)
+        normalized = info["normalized"]
+
+        if info["kind"] == deezer.SHORT_LINK:
+            GLib.idle_add(
+                self._log,
+                "🔗  Detected a Deezer share link — resolving to the full "
+                "deezer.com URL…\n", "info")
+            resolved, err = deezer.resolve_short_link(url)
+            if resolved:
+                GLib.idle_add(self._log, f"🔗  Resolved to: {resolved}\n", "info")
+                normalized = resolved
+                info = deezer.classify_deezer_url(resolved)
+            else:
+                detail = f" ({err})" if err else ""
+                GLib.idle_add(
+                    self._finish_precheck_failed,
+                    "❌  Could not resolve this Deezer share link.",
+                    [f"streamrip cannot open share links directly{detail}.",
+                     "💡  Open the link in your browser and paste the final "
+                     "deezer.com album / track / playlist URL instead."])
+                return None
+
+        if normalized != url:
+            GLib.idle_add(self._log,
+                          f"🔧  Using Deezer URL: {normalized}\n", "info")
+
+        if not deezer.streamrip_will_accept(normalized):
+            GLib.idle_add(
+                self._finish_precheck_failed,
+                "❌  Unsupported Deezer URL — see the log.",
+                ["streamrip only accepts deezer.com album / track / playlist / "
+                 "artist URLs (and deezer.page.link links).",
+                 "💡  Open the link in your browser and paste the final "
+                 "deezer.com URL."])
+            return None
+
+        return normalized
+
+    def _deezer_config_ready(self):
+        """True if streamrip is configured for Deezer; else abort with guidance.
+
+        Surfaces a clear "Deezer not configured" message before the download
+        instead of letting streamrip fail later. Never reads or logs the ARL.
+        """
+        st = deezer.deezer_config_status(self._streamrip_config_path())
+        if st["ready"]:
+            return True
+        guidance = ["Deezer downloads need an ARL cookie saved in streamrip's "
+                    "config.toml."]
+        guidance += [f"• {p}" for p in st["problems"]]
+        guidance.append("💡  Open Setup → Deezer, paste your ARL and Save, then "
+                        "try again.")
+        GLib.idle_add(
+            self._finish_precheck_failed,
+            "🔐  Deezer not configured — add your ARL in Setup.", guidance)
+        return False
+
+    def _finish_precheck_failed(self, status_msg, log_lines=None):
+        """Abort a download before streamrip is spawned; reset UI + queue.
+
+        Mirrors the tail of ``_finish`` (button reset, history/queue status,
+        queue advance) for failures detected during the pre-flight phase, when
+        there is no streamrip process to wait on. Runs on the GTK thread.
+        """
+        self._set_status(status_msg, "error")
+        self._log("\n" + status_msg + "\n", "error")
+        for line in (log_lines or []):
+            self._log(f"   {line}\n", "info")
+        self._history_set_status(self._current_history_entry, "Failed")
+        self._queue_set_status(self._current_queue_item, "Failed")
+        self._current_history_entry = None
+        self._current_queue_item = None
+        self.btn_download.set_sensitive(True)
+        self.btn_stop.hide()
+        self.speed_lbl.set_markup("")
+        if self._queue_stopped_by_user:
+            self._queue_stopped_by_user = False
+        else:
+            self._queue_start_next()
+        return False
 
     # ── Métadonnées ───────────────────────────────────────────────────────────
     #
@@ -1440,6 +1544,7 @@ class AurynApp:
         self._tidal_auth_required = False
         self._tidal_auth_corrupted = False
         self._tb_noise_notified = False
+        self._deezer_provider_notified = False
         self._cfg_fingerprint_pre = None
 
         if self.cb_clear_cache.get_active() and os.path.exists(db):
@@ -1478,9 +1583,25 @@ class AurynApp:
                 {"section": "qobuz", "key": "use_auth_token",
                  "value": "true", "quote": False},
             ]
+            # Deezer only supports quality 0..2; streamrip indexes a 3-row
+            # table with this value and crashes ("list index out of range")
+            # for anything higher. Clamp the value written to [deezer] so a
+            # FLAC-24/Max selection downgrades cleanly instead of failing
+            # every track. Other services keep the requested quality.
+            deezer_quality = deezer.clamp_quality(quality)
             for svc in ("qobuz", "tidal", "deezer", "soundcloud"):
+                svc_quality = deezer_quality if svc == "deezer" else quality
                 edits.append({"section": svc, "key": "quality",
-                              "value": str(quality), "quote": False})
+                              "value": str(svc_quality), "quote": False})
+
+            if deezer.is_deezer_url(url) and deezer.quality_was_clamped(quality):
+                GLib.idle_add(
+                    self._log,
+                    "ℹ️  Deezer supports up to quality "
+                    f"{deezer.DEEZER_MAX_QUALITY} "
+                    f"({deezer.quality_label(deezer.DEEZER_MAX_QUALITY)}); "
+                    f"using {deezer_quality} for this Deezer download "
+                    f"(requested {quality}).\n", "info")
 
             ok, err, changed = tidal_auth.apply_streamrip_config_updates(
                 cfg, edits)
@@ -1710,6 +1831,26 @@ class AurynApp:
             self._auth_log(
                 "🔐  Detected a TIDAL re-authentication / resync prompt in "
                 "streamrip output.\n", "error")
+
+        # Deezer-specific classification, scoped to a Deezer download so a
+        # Qobuz/TIDAL line never triggers it. The raw streamrip line is still
+        # logged below (raw details preserved); this only adds a clear,
+        # actionable one-liner. The provider-failure note is shown once so a
+        # per-track flood collapses to a single explanation.
+        if deezer.is_deezer_url(self._active_url):
+            cat, friendly = deezer.classify_deezer_error(line)
+            if cat == deezer.ERR_PROVIDER_FAILURE:
+                if not self._deezer_provider_notified:
+                    self._deezer_provider_notified = True
+                    self._set_status(deezer.PROVIDER_FAILURE_MESSAGE, "error")
+                    if not self._last_known_error:
+                        self._last_known_error = deezer.PROVIDER_FAILURE_MESSAGE
+                    self._log("⚠  " + deezer.PROVIDER_FAILURE_MESSAGE + "\n",
+                              "error")
+            elif cat and friendly:
+                self._set_status(friendly, "error")
+                if not self._last_known_error:
+                    self._last_known_error = friendly
 
         # Collapse raw traceback frames unless auth-debug is enabled so a
         # streamrip crash does not flood the log with internal frames.
@@ -3058,6 +3199,30 @@ class AurynApp:
                         'An ARL is already configured. Leave the field blank '
                         'to keep it.</span>'
                     ), False, False, 0)
+                deezer_row = Gtk.Box(
+                    orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                deezer_row.set_halign(Gtk.Align.START)
+                test_deezer_btn = Gtk.Button(label="Test Deezer Setup")
+                test_deezer_btn.get_style_context().add_class("neutral-btn")
+
+                def on_test_deezer(_b):
+                    msg, kind = deezer.deezer_setup_summary(
+                        self._streamrip_config_path())
+                    if self._find_rip_path() is None:
+                        msg += "  Note: rip was not found in PATH."
+                        if kind == "ok":
+                            kind = "warn"
+                    set_status(msg, kind)
+
+                test_deezer_btn.connect("clicked", on_test_deezer)
+                deezer_row.pack_start(test_deezer_btn, False, False, 0)
+                body.pack_start(deezer_row, False, False, 0)
+                body.pack_start(note(
+                    '<span foreground="#666666" size="small">'
+                    'Test Deezer Setup checks your saved configuration only '
+                    '(ARL present, quality in range). It never downloads a '
+                    'full album or reveals your ARL.</span>'
+                ), False, False, 0)
                 state["entries"] = {"arl": arl_entry}
 
             else:  # tidal
@@ -3164,12 +3329,7 @@ class AurynApp:
                         msg, kind = ("Qobuz credentials are incomplete in "
                                      "config.toml. Save them first.", "warn")
                 elif service == "deezer":
-                    if saved.get("arl"):
-                        msg, kind = ("Deezer ARL is present in config.toml.",
-                                     "ok")
-                    else:
-                        msg, kind = ("No Deezer ARL found in config.toml. "
-                                     "Save it first.", "warn")
+                    msg, kind = deezer.deezer_setup_summary(cfg_path)
                 else:
                     msg, kind = self._tidal_connection_summary(cfg_path)
                 if not rip_ok:
