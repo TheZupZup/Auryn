@@ -45,6 +45,31 @@ PROVIDER_FAILURE_MESSAGE = (
     "Try another Deezer URL format or update streamrip."
 )
 
+# Auryn recommends Deezer: a large catalog and the simplest setup (a single ARL
+# token, versus TIDAL's device-auth flow), which also suits the NAS/local-
+# library workflow better than TIDAL auth. Surfaced in the UI so first-time
+# users start with the service most likely to "just work". Wording lives here so
+# the UI and the tests stay in sync.
+RECOMMENDED = True
+RECOMMENDED_LABEL = "Deezer (Recommended)"
+RECOMMENDED_NOTE = (
+    "Deezer is the recommended service for Auryn — a large catalog and the "
+    "simplest setup: paste one ARL token and you're ready."
+)
+
+
+def url_guidance():
+    """User-facing guidance for pasting Deezer URLs (shared by UI and tests).
+
+    Returns a list of single-line strings. Never contains secrets.
+    """
+    return [
+        "Prefer a direct deezer.com album, track or playlist URL "
+        "(e.g. https://www.deezer.com/album/302127).",
+        "If you have a link.deezer.com (or dzr.page.link) share link, open it "
+        "in your browser and paste the final deezer.com URL it lands on.",
+    ]
+
 # URL classification kinds returned by :func:`classify_deezer_url`.
 NOT_DEEZER = "not_deezer"      # not a Deezer URL at all
 CONTENT = "content"            # canonical album/track/playlist/artist URL

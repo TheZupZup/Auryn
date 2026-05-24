@@ -3046,7 +3046,10 @@ class AurynApp:
         sel_lbl = Gtk.Label()
         sel_lbl.set_markup('<span foreground="#888888" size="small">Service</span>')
         combo = Gtk.ComboBoxText()
-        for sid, label in (("qobuz", "Qobuz"), ("deezer", "Deezer"), ("tidal", "TIDAL")):
+        # Deezer first and flagged as recommended (large catalog, simplest setup
+        # — a single ARL token). Qobuz/TIDAL remain fully available.
+        for sid, label in (("deezer", deezer.RECOMMENDED_LABEL),
+                           ("qobuz", "Qobuz"), ("tidal", "TIDAL")):
             combo.append(sid, label)
         combo.set_active(0)
         sel_row.pack_start(sel_lbl, False, False, 0)
@@ -3191,6 +3194,12 @@ class AurynApp:
                 state["entries"] = {"email": email_entry, "password": pass_entry}
 
             elif service == "deezer":
+                rec = deezer.RECOMMENDED_NOTE.replace("&", "&amp;").replace(
+                    "<", "&lt;").replace(">", "&gt;")
+                body.pack_start(note(
+                    '<span foreground="#4CAF50" size="small">'
+                    f'⭐  {rec}</span>'
+                ), False, False, 0)
                 grid = Gtk.Grid()
                 grid.set_column_spacing(12)
                 grid.set_row_spacing(8)
@@ -3234,6 +3243,14 @@ class AurynApp:
                     'Test Deezer Setup checks your saved configuration only '
                     '(ARL present, quality in range). It never downloads a '
                     'full album or reveals your ARL.</span>'
+                ), False, False, 0)
+                guidance = "\n".join(
+                    "• " + g.replace("&", "&amp;").replace(
+                        "<", "&lt;").replace(">", "&gt;")
+                    for g in deezer.url_guidance())
+                body.pack_start(note(
+                    '<span foreground="#888888" size="small">'
+                    f'<b>Pasting Deezer links:</b>\n{guidance}</span>'
                 ), False, False, 0)
                 state["entries"] = {"arl": arl_entry}
 
@@ -3315,7 +3332,7 @@ class AurynApp:
                 render(sid)
 
         combo.connect("changed", on_combo_changed)
-        render("qobuz")
+        render("deezer")
         dlg.show_all()
 
         while True:
