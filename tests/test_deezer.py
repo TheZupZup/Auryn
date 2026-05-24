@@ -288,6 +288,34 @@ def test_classify_plain_track_failure_and_none():
     assert d.classify_deezer_error("") == (None, None)
 
 
+# ── Recommended-service treatment ───────────────────────────────────────────
+
+def test_recommended_flag_and_label():
+    assert d.RECOMMENDED is True
+    assert "Recommended" in d.RECOMMENDED_LABEL
+    assert d.RECOMMENDED_LABEL.startswith("Deezer")
+
+
+def test_recommended_note_is_single_line_and_secret_free():
+    assert d.RECOMMENDED_NOTE
+    assert "\n" not in d.RECOMMENDED_NOTE
+    assert "arl" not in d.RECOMMENDED_NOTE.lower() or "ARL token" in d.RECOMMENDED_NOTE
+
+
+def test_url_guidance_covers_direct_and_share_links():
+    lines = d.url_guidance()
+    assert isinstance(lines, list) and len(lines) >= 2
+    joined = " ".join(lines).lower()
+    # Prefer a direct deezer.com URL …
+    assert "deezer.com" in joined
+    # … and explain the share-link → browser → final-URL workaround.
+    assert "link.deezer.com" in joined
+    assert "browser" in joined
+    # Guidance must stay single-line per entry (rendered as bullet list).
+    for line in lines:
+        assert "\n" not in line
+
+
 # ── Sanity: module constants are stable ─────────────────────────────────────
 
 def test_provider_failure_message_is_actionable():
