@@ -1,321 +1,245 @@
-# Auryn
-[![CI](https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg)](https://github.com/TheZupZup/Auryn/actions)
-[![Linux Packages](https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml/badge.svg)](https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml)
-[![Latest Release](https://img.shields.io/github/v/release/TheZupZup/Auryn)](https://github.com/TheZupZup/Auryn/releases/latest)
-[![Download .deb/.rpm](https://img.shields.io/badge/Linux%20Packages-.deb%20%7C%20.rpm-blue)](https://github.com/TheZupZup/Auryn/releases/latest)
-[![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python)](https://www.python.org/)
-[![GTK3](https://img.shields.io/badge/GTK-3-green?logo=gnome)](https://www.gtk.org/)
+<p align="center">
+  <img src="./assets/Auryn_256.png" width="120" alt="Auryn icon">
+</p>
 
-
-Auryn is a graphical interface for an existing open-source tool. It does not provide, host, or distribute any content.
+<h1 align="center">Auryn</h1>
 
 <p align="center">
-  <img src="./assets/Auryn.svg" width="120">
+  <b>A privacy-friendly desktop GUI for <a href="https://github.com/nathom/streamrip">streamrip</a>.</b><br>
+  Build and organize a high-quality local music library — no terminal required.
 </p>
 
 <p align="center">
-  <img src="./assets/Auryn_ui.png" width="900">
+  <a href="https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg" alt="Python application CI"></a>
+  <a href="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml/badge.svg" alt="Linux packages"></a>
+  <a href="https://github.com/TheZupZup/Auryn/releases/latest"><img src="https://img.shields.io/github/v/release/TheZupZup/Auryn?label=release" alt="Latest release"></a>
+  <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/github/license/TheZupZup/Auryn" alt="License: GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20(experimental)-blue" alt="Platform: Linux, experimental Windows">
 </p>
 
 <p align="center">
-  <b>graphical interface for an existing open-source command-line tool</b>
+  <img src="./assets/Auryn_ui.png" width="900" alt="Auryn main window">
 </p>
 
-## Announcement
-- .deb package available in Releases
-- Flatpak support in progress
+---
+
+## What is Auryn?
+
+Auryn is a clean, dark-themed graphical front-end for [streamrip](https://github.com/nathom/streamrip),
+the open-source command-line audio downloader. It turns streamrip's terminal
+workflow into a one-window desktop app: paste a link, pick a quality, and watch
+progress, metadata, cover art, and lyrics appear as your library grows.
+
+Auryn does **not** host, distribute, or provide access to any content. It is a
+GUI wrapper around a tool you install yourself — you supply your own
+credentials and you are responsible for using it within the terms of the
+services you access.
 
 ---
 
 ## Features
 
-- Simple and intuitive GUI for managing local audio workflows
-- Manage and organize local audio libraries
-- Support for high-quality audio formats (FLAC, etc.)
-- Real-time progress and logs
-- One-click workflow (no terminal required)
+- **Deezer (recommended)** — the most reliable choice for large-catalog
+  workflows, with FLAC 16/44.1 downloads.
+- **Qobuz Hi-Res** — best option when you want 24-bit / Hi-Res audio.
+- **TIDAL (experimental)** — supported, but authentication has known
+  limitations and may require manual setup.
+- **SoundCloud** — supported for public tracks and sets.
+- **Sequential download queue** — line up multiple URLs; they run one after
+  another.
+- **Metadata & cover sidebar** — artist, album, quality, track count, UPC, and
+  release date alongside the album art.
+- **Log, Lyrics, History, and Queue tabs** — follow live output, view synced
+  lyrics, review past downloads, and manage the queue.
+- **Diagnostics & setup tools** — built-in `--doctor` preflight checks plus an
+  in-app Setup / Credentials / Diagnostics workflow.
+- **Linux packages** — installable `.deb` and `.rpm` builds.
+- **Experimental Windows build** — best-effort PyInstaller bundle plus a
+  source zip (see [Windows notes](#windows-experimental)).
 
 ---
 
-## Why Auryn?
+## Supported services
 
-Building and managing a personal local audio library
+| Service | Status | Best for | Typical quality |
+|---|---|---|---|
+| **Deezer** | ✅ Recommended | Large catalogs, reliable downloads | FLAC 16/44.1 |
+| **Qobuz** | ✅ Supported | Hi-Res audio | FLAC up to 24-bit |
+| **TIDAL** | ⚠️ Experimental | — | Authentication has known limitations |
+| **SoundCloud** | ✅ Supported | Public tracks & sets | Service-dependent |
 
-It is designed for users who want:
-
-- Full control over their music collection
-- High-quality audio (FLAC / Hi-Res)
-- A clean and easy workflow
-- A solution that integrates with self-hosted setups
-
----
-
-## Use Case
-
-Auryn is ideal for:
-
-- Building a local music library
-- Storing music on a NAS
-- Creating a self-hosted media ecosystem
-- Using media servers like Jellyfin
-
----
-
-## Workflow
-Input Source → Auryn → Local/NAS Library → Media Server → Playback
-
+> You provide your own account credentials. Auryn ships no application IDs,
+> secrets, or API keys.
 
 ---
 
 ## Installation
 
-Tested on Linux Mint / Debian-based systems
+### Download a release
 
-Download the `.deb` package from the releases section:
+Grab the latest packages from the
+[**Releases**](https://github.com/TheZupZup/Auryn/releases/latest) page.
 
-https://codeberg.org/TheZupZup/Auryn/releases
-
-Then install:
-
-```bash
-sudo dpkg -i Auryn.deb
-```
-
-## Docker (Advanced / NAS / Server)
-
-Auryn is available as a Docker image for advanced users, NAS environments, or server setups.
-
-**Docker Hub:** [thezupzup/Auryn](https://hub.docker.com/r/thezupzup/Auryn)
-
-### Prerequisites
-
-Since Auryn is a GUI application, you need to allow the container to access your X11 display server:
+**Debian / Ubuntu / Linux Mint (`.deb`)**
 
 ```bash
-xhost +local:docker
+sudo dpkg -i Auryn_*.deb
+sudo apt-get install -f   # pull in any missing dependencies
 ```
 
-### Option 1: Docker Run
-
-You can start the container with a single command:
+**Fedora / RHEL / openSUSE (`.rpm`)**
 
 ```bash
-docker run -d \
-  --name auryn \
-  -e DISPLAY=$DISPLAY \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v $(pwd)/downloads:/root/Music \
-  thezupzup/Auryn
+sudo rpm -i Auryn-*.rpm
+# or: sudo dnf install ./Auryn-*.rpm
 ```
 
-**Parameters Explained:**
-- `-e DISPLAY=$DISPLAY`: Passes your host's display environment variable to the container.
-- `-v /tmp/.X11-unix:/tmp/.X11-unix`: Mounts the X11 socket for GUI rendering.
-- `-v $(pwd)/downloads:/root/Music`: Maps your local downloads folder to the container's output directory.
+**Windows (experimental)**
 
-### Option 2: Docker Compose (Recommended)
+Download the `auryn-windows-*` artifact (zip / exe) from a release or CI run.
+Windows support is experimental — see [Windows notes](#windows-experimental)
+before you start.
 
-For a more manageable setup, use a `docker-compose.yml` file:
+### From source
 
-```yaml
-services:
-  auryn:
-    image: thezupzup/Auryn
-    container_name: auryn
-    environment:
-      - DISPLAY=${DISPLAY}
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./downloads:/root/Music
-    network_mode: host
-    restart: unless-stopped
-```
-
-**To run with Docker Compose:**
-1. Create a `docker-compose.yml` file with the content above.
-2. Run `docker-compose up -d`.
----
-
-## Windows experimental
-
-Windows support is experimental. The app has a cross-platform path layer and an experimental Windows runtime path, but GTK/PyGObject on Windows is not trivial to set up and the experience is not as polished as on Linux.
-
-> **Experimental CI build:** the `Windows packaging (experimental)` workflow
-> (`.github/workflows/windows-exe.yml`) runs on `windows-latest` and uploads
-> up to two artifacts per run:
->
-> - `auryn-windows-onedir-<version>` — best-effort standalone PyInstaller
->   `--onedir` bundle. Currently **experimental**: it may fail or be
->   incomplete on a given run.
-> - `auryn-windows-source-<version>` — always-produced source-only zip
->   containing `src/`, `assets/`, the Windows packaging files, and a
->   `README-WINDOWS.txt` explaining how to run Auryn on Windows with a
->   manually installed MSYS2 / GTK3 / PyGObject toolchain.
->
-> The Windows build is **experimental** — it is unsigned, has no installer,
-> and **TIDAL / streamrip setup may still require testing** on Windows
-> even when the GUI launches cleanly.
-
-### Requirements
-
-- Python 3.11+
-- [streamrip](https://github.com/nathom/streamrip) installed and available on `PATH` as `rip`
-- GTK 3 and PyGObject installed through a supported Windows method (for example MSYS2, or another PyGObject-compatible environment)
-
-### Basic setup
-
-```bat
+```bash
 git clone https://github.com/TheZupZup/Auryn.git
 cd Auryn
-
-python -m venv .venv
-.venv\Scripts\activate
-
 pip install -r requirements.txt
-
-:: install streamrip (either inside the venv)
-pip install streamrip
-
-:: ...or as an isolated CLI via pipx
-pipx install streamrip
-
-python src\Auryn.py
+python3 src/Auryn.py
 ```
 
-Make sure `rip --version` works from the same shell before launching Auryn.
+Auryn needs **Python 3.11+**, **GTK 3 / PyGObject** (`python3-gi`,
+`gir1.2-gtk-3.0`), and **streamrip** on your `PATH`.
 
-### Notes
+---
 
-- Windows support is **experimental** and not officially supported yet.
-- GTK installation may require MSYS2 or another PyGObject-compatible setup; follow the official PyGObject Windows instructions to get `gi` importable from your Python environment.
-- On Windows, downloads run through a pipe-based subprocess path instead of the PTY-based path used on Linux. Output capture and progress parsing may behave slightly differently.
-- Issues and PRs are welcome, especially for Windows packaging improvements (installers, GTK bundling, CI).
-- Planned packaging approach: see [docs/windows-packaging.md](docs/windows-packaging.md).
+## Setup
+
+1. **Install streamrip** so the `rip` command is available:
+
+   ```bash
+   pipx install streamrip     # isolated CLI (recommended)
+   # or
+   pip install streamrip
+   ```
+
+   Verify it works: `rip --version`.
+
+2. **Run the doctor** to confirm your environment is ready:
+
+   ```bash
+   python3 src/Auryn.py --doctor
+   ```
+
+   It checks Python, GTK/PyGObject, the `rip` executable, the streamrip config,
+   and your music folder. Add `--verbose` for extra detail when filing reports.
+
+3. **Configure credentials** from inside Auryn via the **Setup** and
+   **Credentials** buttons. For Deezer, add your ARL cookie under
+   **Setup → Deezer**, then Save. Auryn writes to streamrip's own config — it
+   never stores secrets of its own.
 
 ---
 
 ## Troubleshooting
 
-Auryn ships two diagnostic flags to help verify your installation before launching the GUI.
+**`streamrip` / `rip` not found**
+Make sure streamrip is installed and on the same `PATH` Auryn runs from. Test
+with `rip --version`. If you used `pipx`, ensure `~/.local/bin` is on your
+`PATH`.
 
-### --version
+**Missing `config.toml`**
+streamrip creates its config on first run. Launch `rip` once, or use Auryn's
+**Setup** dialog, then re-run `--doctor` to confirm the config is detected.
 
-Prints the application version and exits.
+**"Deezer not configured"**
+Deezer downloads need an ARL cookie. Open **Setup → Deezer**, paste your ARL,
+and Save. Then retry the download.
+
+**TIDAL authentication**
+TIDAL is experimental. Auth tokens can expire or fail to refresh; you may need
+to re-authenticate via streamrip directly. Treat TIDAL as best-effort for now.
+
+**Windows notes**
+GTK/PyGObject must be installed through a supported method (e.g. MSYS2).
+Downloads use a pipe-based subprocess path instead of the Linux PTY path, so
+progress output may differ slightly. The build is unsigned and has no
+installer. See [docs/windows-packaging.md](docs/windows-packaging.md).
+
+---
+
+## Windows (experimental)
+
+Windows support is **experimental and not officially supported yet**. The app
+has a cross-platform path layer and an experimental Windows runtime path, but
+GTK/PyGObject on Windows is not trivial to set up and the experience is less
+polished than on Linux.
+
+The `Windows packaging (experimental)` workflow
+([`.github/workflows/windows-exe.yml`](.github/workflows/windows-exe.yml)) runs
+on `windows-latest` and can produce:
+
+- `auryn-windows-onedir-<version>` — a best-effort standalone PyInstaller
+  `--onedir` bundle (may be incomplete on a given run).
+- `auryn-windows-source-<version>` — an always-produced source-only zip with a
+  `README-WINDOWS.txt` explaining how to run Auryn against a manually installed
+  MSYS2 / GTK3 / PyGObject toolchain.
+
+Contributions toward better Windows packaging (installers, GTK bundling, CI)
+are especially welcome.
+
+---
+
+## Contributing
+
+Contributions are welcome — please keep them small and focused.
+
+- **One change per PR.** Small, reviewable pull requests get merged faster.
+- **Never push to `main`.** Branch from `main` and open a PR against it. See
+  [CONTRIBUTING.md](CONTRIBUTING.md) for the full branch rules.
+- **Don't change download logic or break Deezer support** without discussion.
+
+Run the same checks CI runs before opening a PR:
 
 ```bash
-python src/Auryn.py --version
+python3 -m py_compile src/Auryn.py    # syntax check
+python3 -m pytest                     # unit tests (GTK-free core)
+flake8 . --select=E9,F63,F7,F82       # lint for real errors
 ```
 
-### --doctor
+---
 
-Runs a series of preflight checks and reports the result of each one:
+## Project status
 
-| Check | What is verified |
-|---|---|
-| Python | Version meets the minimum requirement |
-| GTK / PyGObject | The `gi` module and GTK 3 bindings are importable |
-| streamrip / rip | The `rip` executable is present on `PATH` |
-| streamrip config | A streamrip configuration file exists |
-| Music folder | The default output directory (`~/Music`) is accessible |
-
-```bash
-python src/Auryn.py --doctor
-```
-
-The command prints a status line for each check. If a check fails, `--doctor` exits immediately with a non-zero exit code; subsequent checks are not run. A clean environment exits with code `0`.
-
-#### Verbose mode
-
-Pass `--verbose` (or the short form `-v`) alongside `--doctor` to include extra diagnostic details with each check:
-
-```bash
-python src/Auryn.py --doctor --verbose
-```
-
-In verbose mode the report additionally includes the active Python executable, the host platform, the resolved `rip` path (or the directories searched when it is not found), the streamrip configuration path, and the default download folder. Use this when filing bug reports or diagnosing environment-specific issues.
+Auryn is actively developed and part of an open-source learning journey.
+Feedback, bug reports, and pull requests are all appreciated.
 
 ---
 
-## Project Status
+## Disclaimer & legal
 
-This is an actively developed project.
+Auryn is a graphical interface for an existing open-source audio tool. It does
+not host, distribute, or provide access to copyrighted content, and it does not
+directly interact with any online service. It is intended for legitimate use
+with content you own or are authorized to access; users are responsible for
+complying with applicable laws and the terms of service of any platform they
+access.
 
-It is part of my open-source learning journey, and I am continuously improving it.
+Auryn ships no application IDs, secrets, or private API keys, and includes no
+functionality for accessing restricted or protected content.
 
-Feedback, suggestions, and contributions are welcome.
-
----
-
-## Future Ideas
-
-Better library organization
-
-Improved UI/UX
-
-Offline-ready workflows
-
-Integration with self-hosted media systems
-
----
-## Disclaimer & Legal
-
-Auryn is a graphical interface for an existing open source audio tool and does not provide, host, or distribute any content.
-
-This software is intended for legitimate use with content you own or are authorized to access.
-
-Users are responsible for ensuring that their use of this tool complies with applicable laws and the terms of service of any platforms they access.
-
-The developer of Auryn does not encourage or support misuse of this software.
+**Trademarks.** Qobuz, Deezer, TIDAL, and SoundCloud are trademarks of their
+respective owners. Auryn is not affiliated with, endorsed by, or sponsored by
+any of these services. Please review each platform's terms of service:
+[Qobuz](https://www.qobuz.com/us-en/info/legal/terms-of-use) ·
+[Deezer](https://www.deezer.com/legal/cgu) ·
+[TIDAL](https://tidal.com/terms) ·
+[SoundCloud](https://soundcloud.com/terms-of-use).
 
 ---
 
-### Limitations
-
-This program does not include:
-
-- Any functionality related to restricted or protected content access
-- Any application IDs, secrets, or private API keys
-- Any tools intended to violate platform terms of service
-
----
-
-### Technical clarification
-
-Auryn is a GUI frontend for an existing open-source command-line tool.
-It does not host, distribute, or provide access to copyrighted content, and it does not directly interact with any online services.
-
----
-
-### Trademarks
-
-Qobuz, Deezer, Tidal, and SoundCloud are registered trademarks of their respective owners.  
-Auryn is not affiliated with, endorsed by, or sponsored by any of these services.
-
----
-
-### Terms of Service
-
-Users should ensure that their usage complies with the Terms of Service of the platforms they access, including:
-
-- [Qobuz Terms of Service](https://www.qobuz.com/us-en/info/legal/terms-of-use)
-- [Deezer Terms of Service](https://www.deezer.com/legal/cgu)
-- [Tidal Terms of Service](https://tidal.com/terms)
-- [SoundCloud Terms of Service](https://soundcloud.com/terms-of-use)
-
----
-
-## Acknowledgment
-
-This project was created with the help of AI tools as part of my learning process.
-
----
-## Author
-
-Created by TheZupZup
-
----
 ## License
 
-Copyright (C) 2025 TheZupZup — Auryn  
-Licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html)
-
+Copyright © 2025 TheZupZup — Auryn
+Licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html).
