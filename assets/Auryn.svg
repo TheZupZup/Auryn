@@ -1,31 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Auryn app icon. Source of truth for all PNG sizes. -->
+<!-- Export: see assets/README.md -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF6B35"/>
-      <stop offset="100%" stop-color="#C0392B"/>
+    <linearGradient id="tile" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF7A45"/>
+      <stop offset="100%" stop-color="#E8502A"/>
     </linearGradient>
-    <linearGradient id="wh" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="white" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#FFE0D0" stop-opacity="0.80"/>
+    <linearGradient id="mark" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#FFEADF"/>
     </linearGradient>
   </defs>
 
-  <!-- Fond arrondi -->
-  <rect x="2" y="2" width="60" height="60" rx="14" ry="14" fill="url(#bg)"/>
-  <!-- Reflet haut -->
-  <rect x="2" y="2" width="60" height="26" rx="14" ry="14" fill="rgba(255,255,255,0.08)"/>
+  <!-- Rounded app tile -->
+  <rect x="2" y="2" width="60" height="60" rx="15" ry="15" fill="url(#tile)"/>
+  <!-- Soft top highlight -->
+  <rect x="2" y="2" width="60" height="30" rx="15" ry="15" fill="#ffffff" opacity="0.07"/>
 
-  <!-- Note de musique (croche) -->
-  <ellipse cx="20" cy="46" rx="8" ry="5.5" fill="url(#wh)"/>
-  <rect x="27.5" y="17" width="3.5" height="29" rx="1.5" fill="url(#wh)"/>
-  <path d="M31 17 Q50 21 48 33 Q44 27 31 25 Z" fill="url(#wh)"/>
+  <!-- Eighth note: head + stem + flag (the "music") -->
+  <g fill="url(#mark)">
+    <ellipse cx="23" cy="42" rx="8.5" ry="6.3" transform="rotate(-20 23 42)"/>
+    <rect x="29.2" y="15" width="3.8" height="25" rx="1.9"/>
+    <path d="M33 15 q12 2.5 11.5 14 q-3-7-11.5-9 Z"/>
+  </g>
 
-  <!-- Cercle download -->
-  <circle cx="46" cy="46" r="12" fill="rgba(0,0,0,0.20)"/>
-  <!-- Flèche download -->
-  <line x1="46" y1="38" x2="46" y2="48" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-  <polyline points="41,45 46,51 51,45" stroke="white" stroke-width="2.5" fill="none"
-            stroke-linecap="round" stroke-linejoin="round"/>
-  <line x1="40" y1="54" x2="52" y2="54" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+  <!-- Download arrow: the "downloader" idea, kept clean for small sizes -->
+  <g stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.95">
+    <line x1="45" y1="34" x2="45" y2="45"/>
+    <polyline points="40,40.5 45,46 50,40.5"/>
+    <line x1="39" y1="50.5" x2="51" y2="50.5"/>
+  </g>
 </svg>

@@ -61,7 +61,7 @@ CSS = b"""
 window { background-color: #1a1a1a; color: #e8e8e8; }
 #header_bar { background-color: #0f0f0f; border-bottom: 2px solid #FF6B35; padding: 8px 14px; min-height: 48px; }
 #right_panel { background-color: #111111; border-left: 1px solid #252525; padding: 10px; min-width: 200px; }
-#url_entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 3px; padding: 6px 10px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; }
+#url_entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 4px; padding: 7px 11px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; transition: border-color 120ms ease; }
 #url_entry:focus { border-color: #FF6B35; }
 .cred-entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 3px; padding: 6px 10px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; }
 .cred-entry:focus { border-color: #FF6B35; }
@@ -70,19 +70,20 @@ checkbutton { color: #aaaaaa; font-size: 12px; }
 checkbutton check { background-color: #0d0d0d; border-color: #444; border-radius: 2px; min-width: 14px; min-height: 14px; }
 checkbutton:checked check { background-color: #FF6B35; border-color: #FF6B35; }
 checkbutton label:hover { color: #FF6B35; }
-.neutral-btn { background-color: #252525; color: #aaaaaa; border: 1px solid #333; border-radius: 3px; padding: 5px 12px; font-size: 11px; }
+.neutral-btn { background-color: #252525; color: #aaaaaa; border: 1px solid #333; border-radius: 4px; padding: 5px 12px; font-size: 11px; transition: all 120ms ease; }
 .neutral-btn:hover { background-color: #2e2e2e; color: #ffffff; border-color: #FF6B35; }
-#btn_download { background-color: #FF6B35; color: #ffffff; border: none; border-radius: 3px; padding: 7px 18px; font-size: 13px; font-weight: bold; }
+#btn_download { background-color: #FF6B35; color: #ffffff; border: none; border-radius: 4px; padding: 7px 18px; font-size: 13px; font-weight: bold; transition: background-color 120ms ease; }
 #btn_download:hover { background-color: #ff7d4d; }
 #btn_download:disabled { background-color: #333; color: #666; }
-#btn_stop { background-color: #c0392b; color: #ffffff; border: none; border-radius: 3px; padding: 7px 16px; font-size: 13px; font-weight: bold; }
+#btn_stop { background-color: #c0392b; color: #ffffff; border: none; border-radius: 4px; padding: 7px 16px; font-size: 13px; font-weight: bold; transition: background-color 120ms ease; }
 #btn_stop:hover { background-color: #e74c3c; }
 #log_view { background-color: #080808; color: #bbbbbb; font-family: 'Ubuntu Mono', 'Courier New', monospace; font-size: 11px; padding: 8px; }
 #log_scroll { border: 1px solid #252525; border-radius: 3px; }
 #lyrics_label { font-family: 'Ubuntu', sans-serif; padding: 4px; }
 notebook { background-color: #0d0d0d; border: 1px solid #252525; border-radius: 3px; }
 notebook stack { background-color: #0d0d0d; padding: 10px; }
-notebook tab { background-color: #111111; color: #888; border: none; padding: 4px 12px; }
+notebook tab { background-color: #111111; color: #888; border: none; padding: 5px 14px; transition: color 120ms ease; }
+notebook tab:hover { color: #cccccc; }
 notebook tab:checked { background-color: #FF6B35; color: #ffffff; font-weight: bold; }
 progressbar trough { background-color: #0d0d0d; border: 1px solid #252525; border-radius: 3px; min-height: 4px; }
 progressbar progress { background-color: #FF6B35; border-radius: 3px; min-height: 4px; }
@@ -3541,7 +3542,7 @@ class AurynApp:
         dlg.set_transient_for(self.window)
         dlg.set_program_name("Auryn")
         dlg.set_version(f"v{APP_VERSION}")
-        dlg.set_comments("GUI wrapper for streamrip\nQobuz • Deezer • Tidal • SoundCloud")
+        dlg.set_comments("GUI wrapper for streamrip\nDeezer • Qobuz • Tidal • SoundCloud")
         dlg.set_copyright("© 2025 TheZupZup")
         dlg.set_license_type(Gtk.License.GPL_3_0)
         dlg.run()
