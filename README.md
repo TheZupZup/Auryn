@@ -242,4 +242,4 @@ any of these services. Please review each platform's terms of service:
 ## License
 
 Copyright © 2025 TheZupZup — Auryn
-Licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html).
+Licensed under the [Mozilla Public License Version 2.0](https://www.mozilla.org/en-US/MPL/2.0/).
