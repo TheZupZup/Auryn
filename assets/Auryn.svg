@@ -4,12 +4,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
     <linearGradient id="tile" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF7A45"/>
-      <stop offset="100%" stop-color="#E8502A"/>
+      <stop offset="0%" stop-color="#1FD1BE"/>
+      <stop offset="100%" stop-color="#0E8C80"/>
     </linearGradient>
     <linearGradient id="mark" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#FFEADF"/>
+      <stop offset="100%" stop-color="#E6FFFA"/>
     </linearGradient>
   </defs>
 
