@@ -54,8 +54,9 @@ services you access.
 - **Diagnostics & setup tools** — built-in `--doctor` preflight checks plus an
   in-app Setup / Credentials / Diagnostics workflow.
 - **Linux packages** — installable `.deb` and `.rpm` builds.
-- **Experimental Windows build** — best-effort PyInstaller bundle plus a
-  source zip (see [Windows notes](#windows-experimental)).
+- **Self-contained Windows build (experimental)** — a PyInstaller bundle with
+  Python, GTK and streamrip included, so no manual installs are needed (see
+  [Windows notes](#windows-experimental)).
 
 ---
 
@@ -96,8 +97,15 @@ sudo rpm -i Auryn-*.rpm
 
 **Windows (experimental)**
 
-Download the `auryn-windows-*` artifact (zip / exe) from a release or CI run.
-Windows support is experimental — see [Windows notes](#windows-experimental)
+1. Download the `auryn-windows-onedir-<version>.zip` from the
+   [**Releases**](https://github.com/TheZupZup/Auryn/releases/latest) page.
+2. Extract it anywhere.
+3. Run **`Auryn.exe`** from the extracted folder.
+4. Open **Setup** and configure **Deezer** (paste your ARL).
+
+The packaged Windows build is **self-contained** — Python, GTK and streamrip
+are all bundled, so **no manual Python, pip or streamrip install is required**.
+Windows support is still experimental — see [Windows notes](#windows-experimental)
 before you start.
 
 ### From source
@@ -162,32 +170,60 @@ TIDAL is experimental. Auth tokens can expire or fail to refresh; you may need
 to re-authenticate via streamrip directly. Treat TIDAL as best-effort for now.
 
 **Windows notes**
-GTK/PyGObject must be installed through a supported method (e.g. MSYS2).
-Downloads use a pipe-based subprocess path instead of the Linux PTY path, so
-progress output may differ slightly. The build is unsigned and has no
-installer. See [docs/windows-packaging.md](docs/windows-packaging.md).
+The packaged `auryn-windows-onedir` build bundles Python, GTK and streamrip,
+so there is nothing to install — just extract and run `Auryn.exe`, then add
+your Deezer ARL in Setup. (Running *from source* on Windows still requires
+GTK/PyGObject via MSYS2 and a separate streamrip install.) Downloads use a
+pipe-based subprocess path instead of the Linux PTY path, so progress output
+may differ slightly. The build is unsigned and has no installer. See
+[docs/windows-packaging.md](docs/windows-packaging.md).
 
 ---
 
 ## Windows (experimental)
 
-Windows support is **experimental and not officially supported yet**. The app
-has a cross-platform path layer and an experimental Windows runtime path, but
-GTK/PyGObject on Windows is not trivial to set up and the experience is less
-polished than on Linux.
+Windows support is **experimental and not officially supported yet**, but the
+packaged build is now **self-contained**: Python, the GTK3 runtime *and*
+streamrip are all bundled inside the app. Users do **not** install Python, pip
+or streamrip by hand.
+
+### Using the packaged build
+
+1. Download `auryn-windows-onedir-<version>.zip` from a release (or CI run).
+2. Extract it anywhere and run **`Auryn.exe`**.
+3. On first launch Auryn offers to set up Deezer — open **Setup**, paste your
+   Deezer **ARL** token, and Save. Your ARL is written only to streamrip's
+   config and is never shown or logged.
+4. Paste a Deezer link, pick a quality, and download.
+
+Auryn resolves the bundled streamrip internally (it runs streamrip in its own
+frozen interpreter), creates streamrip's config at
+`%APPDATA%\streamrip\config.toml`, and works offline-of-setup with no terminal
+steps. Run `Auryn.exe --doctor` for a self-check that reports packaged mode,
+whether the bundled streamrip was found, the config path, and whether Deezer is
+configured (never the ARL itself).
+
+> **Deezer is recommended** on Windows — a large catalog and the simplest setup
+> (one ARL token). **TIDAL is experimental** and may still require manual
+> re-authentication.
+
+### How it's built
 
 The `Windows packaging (experimental)` workflow
 ([`.github/workflows/windows-exe.yml`](.github/workflows/windows-exe.yml)) runs
-on `windows-latest` and can produce:
+on `windows-latest`, installs GTK3 + PyGObject from MSYS2 MINGW64 **and**
+`pip install`s streamrip into the same Python before PyInstaller collects
+everything into the bundle. It can produce:
 
-- `auryn-windows-onedir-<version>` — a best-effort standalone PyInstaller
-  `--onedir` bundle (may be incomplete on a given run).
+- `auryn-windows-onedir-<version>` — the self-contained standalone PyInstaller
+  `--onedir` bundle (Python + GTK3 + streamrip included). A post-build step
+  smoke-tests that the bundled streamrip actually runs.
 - `auryn-windows-source-<version>` — an always-produced source-only zip with a
-  `README-WINDOWS.txt` explaining how to run Auryn against a manually installed
-  MSYS2 / GTK3 / PyGObject toolchain.
+  `README-WINDOWS.txt` for running Auryn against a manually installed
+  MSYS2 / GTK3 / PyGObject toolchain (this fallback is *not* self-contained).
 
-Contributions toward better Windows packaging (installers, GTK bundling, CI)
-are especially welcome.
+Contributions toward better Windows packaging (installers, code signing) are
+especially welcome.
 
 ---
 

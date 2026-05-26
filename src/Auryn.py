@@ -8,7 +8,6 @@ UI chargée depuis Auryn.ui (Glade)
 
 import os
 import re
-import shutil
 import threading
 import subprocess
 import urllib.request
@@ -30,6 +29,7 @@ from core import streamrip_status
 from core import log_format
 from core import deezer
 from core import quality as qual
+from core import streamrip_exec
 
 APP_NAME = "Auryn"
 APP_VERSION = "0.1.1"
@@ -262,7 +262,12 @@ def open_in_file_manager(path):
 
 
 def run_doctor(verbose=False):
-    """Fail-fast environment check; prints only the first problem found."""
+    """Fail-fast environment check; prints only the first problem found.
+
+    On a packaged Windows build it additionally reports the packaged status,
+    whether the bundled streamrip was found, the streamrip config path and
+    whether Deezer is configured — all without ever exposing the ARL.
+    """
     rip_search_paths = [
         os.path.expanduser("~/.local/bin/rip"),
         "/usr/local/bin/rip",
@@ -270,6 +275,11 @@ def run_doctor(verbose=False):
     ]
     cfg_path = os.path.join(resolve_config_dir(), "config.toml")
     folder = os.path.expanduser("~/Music")
+    packaged = streamrip_exec.is_windows_packaged_build()
+    configured_rip = (os.environ.get("AURYN_STREAMRIP")
+                      or os.environ.get("AURYN_RIP"))
+    rip_cmd = streamrip_exec.get_streamrip_executable(
+        configured_path=configured_rip)
 
     if verbose:
         print(f"INFO  Python version: {sys.version.split()[0]}")
@@ -281,6 +291,21 @@ def run_doctor(verbose=False):
             print(tidal_auth.auth_debug_report(cfg_path))
         except Exception as exc:
             print(f"INFO  TIDAL auth report unavailable: {exc}")
+
+    # Packaged Windows report (always shown, not just in verbose mode).
+    if packaged:
+        print("INFO  Auryn packaged mode detected (self-contained Windows build).")
+        bundled = streamrip_exec.get_bundled_streamrip_path()
+        if bundled:
+            print(f"OK    Bundled streamrip found: {streamrip_exec.describe_streamrip_command(bundled)}")
+        else:
+            print("FAIL  Bundled streamrip NOT found inside the package.")
+        print(f"INFO  streamrip config path: {cfg_path}")
+        try:
+            arl_present = bool(deezer.deezer_config_status(cfg_path).get("arl_present"))
+        except Exception:
+            arl_present = False
+        print(f"INFO  Deezer configured: {'yes' if arl_present else 'no'}")
 
     if sys.version_info < (3, 8):
         print(f"FAIL  Python >= 3.8 required (found {sys.version.split()[0]})")
@@ -294,22 +319,19 @@ def run_doctor(verbose=False):
         print(f"FAIL  GTK/PyGObject unavailable: {exc}")
         return False
 
-    rip_path = shutil.which("rip")
-    if not rip_path:
-        for _c in rip_search_paths:
-            if os.path.isfile(_c):
-                rip_path = _c
-                break
-    if not rip_path:
-        print("FAIL  streamrip (rip) not found in PATH or common locations.")
-        if verbose:
-            print("INFO  Paths searched for rip:")
-            print("        $PATH (via shutil.which)")
-            for _c in rip_search_paths:
-                print(f"        {_c}")
+    if not rip_cmd:
+        if packaged:
+            print("FAIL  Bundled streamrip not found inside the Auryn package.")
+        else:
+            print("FAIL  streamrip (rip) not found in PATH or common locations.")
+            if verbose:
+                print("INFO  Paths searched for rip:")
+                print("        $PATH (via shutil.which)")
+                for _c in rip_search_paths:
+                    print(f"        {_c}")
         return False
     if verbose:
-        print(f"INFO  rip found at: {rip_path}")
+        print(f"INFO  streamrip command: {streamrip_exec.describe_streamrip_command(rip_cmd)}")
 
     if not os.path.exists(cfg_path):
         print(f"FAIL  streamrip config not found: {cfg_path}  (run: rip config reset)")
@@ -488,7 +510,12 @@ class AurynApp:
         self._is_first_launch = is_first_launch()
         if self._is_first_launch:
             GLib.idle_add(self._show_first_launch_welcome)
-        GLib.idle_add(self._offer_streamrip_install)
+        if streamrip_exec.is_windows_packaged_build():
+            # streamrip ships inside the package: never prompt to pip-install
+            # it. Instead, guide first-run users straight into Deezer setup.
+            GLib.idle_add(self._windows_first_run_setup)
+        else:
+            GLib.idle_add(self._offer_streamrip_install)
         GLib.idle_add(self._first_run_health_check)
 
     # ── Préférences ──────────────────────────────────────────────────────────
@@ -1206,44 +1233,67 @@ class AurynApp:
 
     # ── Lancement streamrip ───────────────────────────────────────────────────
 
+    def _streamrip_cmd(self):
+        """Resolve the streamrip command to spawn, as an argv list (or None).
+
+        Search order (see core.streamrip_exec): streamrip bundled inside a
+        packaged Windows build, then an explicitly configured path, then the
+        system PATH / common install locations. On a packaged Windows build the
+        returned argv is the multi-call form that runs the bundled streamrip in
+        Auryn's own frozen interpreter, so users never install Python/streamrip.
+        """
+        configured = None
+        try:
+            configured = self._config.get("streamrip_path")
+        except Exception:
+            configured = None
+        if not configured:
+            configured = (os.environ.get("AURYN_STREAMRIP")
+                          or os.environ.get("AURYN_RIP"))
+        return streamrip_exec.get_streamrip_executable(configured_path=configured)
+
     def _find_rip_path(self):
-        found = shutil.which("rip")
-        if found:
-            return found
+        """Back-compat shim: the resolved command's first element, or None.
 
-        if IS_WINDOWS:
-            candidates = []
-            appdata = os.environ.get("APPDATA", "")
-            localappdata = os.environ.get("LOCALAPPDATA", "")
-            userprofile = os.environ.get("USERPROFILE", "")
+        Existing call sites use this for truthiness ("is streamrip available?")
+        and display. Spawn sites use :meth:`_streamrip_cmd` to get the full argv.
+        """
+        cmd = self._streamrip_cmd()
+        return cmd[0] if cmd else None
 
-            if appdata:
-                candidates.append(os.path.join(appdata, "Python", "Scripts", "rip.exe"))
-                candidates.append(os.path.join(appdata, "pipx", "venvs", "streamrip", "Scripts", "rip.exe"))
-            if localappdata:
-                python_root = os.path.join(localappdata, "Programs", "Python")
-                if os.path.isdir(python_root):
-                    for entry in sorted(os.listdir(python_root), reverse=True):
-                        if entry.startswith("Python"):
-                            candidates.append(
-                                os.path.join(python_root, entry, "Scripts", "rip.exe")
-                            )
-            if userprofile:
-                candidates.append(os.path.join(userprofile, ".local", "bin", "rip.exe"))
+    def _streamrip_label(self, cmd=None):
+        """Display label for the resolved streamrip command (never a secret)."""
+        if cmd is None:
+            cmd = self._streamrip_cmd()
+        return streamrip_exec.describe_streamrip_command(cmd)
 
-            for candidate in candidates:
-                if os.path.isfile(candidate):
-                    return candidate
-        else:
-            for candidate in [
-                os.path.expanduser("~/.local/bin/rip"),
-                "/usr/local/bin/rip",
-                "/usr/bin/rip",
-            ]:
-                if os.path.isfile(candidate):
-                    return candidate
+    def _ensure_streamrip_config(self):
+        """Create streamrip's config.toml if missing so credentials can be saved.
 
-        return None
+        On a packaged Windows build streamrip is bundled, so `config reset`
+        works without any user-installed tooling. Returns True if the config
+        exists afterwards. Never raises.
+        """
+        cfg = self._streamrip_config_path()
+        if os.path.exists(cfg):
+            return True
+        cmd = self._streamrip_cmd()
+        if not cmd:
+            return False
+        try:
+            os.makedirs(os.path.dirname(cfg), exist_ok=True)
+        except OSError:
+            pass
+        creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                         if IS_WINDOWS else 0)
+        try:
+            # stdin=DEVNULL so a prompt can never block the GTK thread.
+            subprocess.run(cmd + ["config", "reset"], capture_output=True,
+                           text=True, timeout=30, stdin=subprocess.DEVNULL,
+                           creationflags=creationflags)
+        except Exception:
+            pass
+        return os.path.exists(cfg)
 
     def _check_dest_writable(self):
         try:
@@ -1256,9 +1306,14 @@ class AurynApp:
 
     def _run_preflight_checks(self, auto_fix=False):
         issues = []
-        rip_path = self._find_rip_path()
-        if not rip_path:
-            if IS_WINDOWS:
+        rip_cmd = self._streamrip_cmd()
+        if not rip_cmd:
+            if streamrip_exec.is_windows_packaged_build():
+                issues.append(
+                    "Bundled streamrip is missing from this Auryn package — "
+                    "the download tool could not be located inside the app."
+                )
+            elif IS_WINDOWS:
                 issues.append(
                     "streamrip not found — rip.exe must be installed and in PATH. "
                     "Install via: pipx install streamrip (or: pip install streamrip), "
@@ -1269,9 +1324,9 @@ class AurynApp:
 
         cfg_path = os.path.join(resolve_config_dir(), "config.toml")
         if not os.path.exists(cfg_path):
-            if auto_fix and rip_path:
+            if auto_fix and rip_cmd:
                 try:
-                    result = subprocess.run([rip_path, "config", "reset"], capture_output=True, text=True)
+                    result = subprocess.run(rip_cmd + ["config", "reset"], capture_output=True, text=True)
                     if result.returncode != 0:
                         issues.append("Unable to generate streamrip config automatically.")
                 except Exception:
@@ -1287,13 +1342,17 @@ class AurynApp:
         return (len(issues) == 0, issues)
 
     def _show_first_launch_welcome(self):
-        rip_found = shutil.which("rip") is not None
         body = (
             "The setup wizard will help you configure:\n"
             "  • Download folder\n"
             "  • streamrip credentials and config\n\n"
         )
-        if rip_found:
+        if streamrip_exec.is_windows_packaged_build():
+            body += (
+                "streamrip is included in this Auryn package — no separate "
+                "Python or streamrip install is required."
+            )
+        elif self._find_rip_path() is not None:
             body += "streamrip (rip) was detected on your system."
         else:
             body += (
@@ -1312,6 +1371,47 @@ class AurynApp:
         dlg.add_button("Get Started", Gtk.ResponseType.OK)
         dlg.run()
         dlg.destroy()
+        return False
+
+    def _windows_first_run_setup(self):
+        """Packaged Windows first-run: open Deezer setup if no ARL is saved.
+
+        streamrip is bundled, so the only thing a new user must do is paste a
+        Deezer ARL. Show Setup proactively instead of letting the first
+        download fail. The ARL itself is never logged or displayed.
+        """
+        cfg = self._streamrip_config_path()
+        try:
+            arl_present = deezer.deezer_config_status(cfg).get("arl_present")
+        except Exception:
+            arl_present = False
+        if arl_present:
+            return False
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Set up Deezer to start downloading.",
+        )
+        dlg.format_secondary_text(
+            "Auryn includes everything it needs to download — no Python, pip "
+            "or streamrip install required.\n\n"
+            "Deezer is the recommended service: paste your ARL token and "
+            "you're ready. Your ARL is written only to streamrip's config "
+            "file — Auryn never shows or logs it."
+        )
+        later_btn = dlg.add_button("Later", Gtk.ResponseType.CANCEL)
+        setup_btn = dlg.add_button("Set up Deezer", Gtk.ResponseType.OK)
+        later_btn.get_style_context().add_class("neutral-btn")
+        setup_btn.get_style_context().add_class("neutral-btn")
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        response = dlg.run()
+        dlg.destroy()
+
+        if response == Gtk.ResponseType.OK:
+            self._show_credentials_dialog()
         return False
 
     def _offer_streamrip_install(self):
@@ -1640,10 +1740,14 @@ class AurynApp:
         GLib.idle_add(self._log, f"🎵  Quality : {quality} | Dest : {self._dest_folder}\n", "info")
         GLib.idle_add(self._log, "─" * 60 + "\n", "dim")
 
-        rip_path = self._find_rip_path()
+        rip_cmd = self._streamrip_cmd()
 
-        if not rip_path:
-            if IS_WINDOWS:
+        if not rip_cmd:
+            if streamrip_exec.is_windows_packaged_build():
+                GLib.idle_add(self._log,
+                    "❌  Bundled streamrip is missing from this Auryn package.\n"
+                    "    The download tool could not be located inside the app.\n", "error")
+            elif IS_WINDOWS:
                 GLib.idle_add(self._log,
                     "❌  streamrip not found — rip.exe must be in PATH.\n"
                     "    Install: pipx install streamrip  (or: pip install streamrip)\n"
@@ -1656,7 +1760,7 @@ class AurynApp:
             GLib.idle_add(self._finish, False)
             return
 
-        GLib.idle_add(self._log, f"🔧  Using: {rip_path}\n", "info")
+        GLib.idle_add(self._log, f"🔧  Using: {self._streamrip_label(rip_cmd)}\n", "info")
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
@@ -1670,14 +1774,14 @@ class AurynApp:
         env["PYTHONIOENCODING"] = "utf-8"
 
         if IS_WINDOWS:
-            self._run_download_windows(rip_path, url, env)
+            self._run_download_windows(rip_cmd, url, env)
             return
 
         master_fd, slave_fd = pty.openpty()
 
         try:
             self._process = subprocess.Popen(
-                [rip_path, "url", url],
+                rip_cmd + ["url", url],
                 stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
                 close_fds=True, env=env,
             )
@@ -1743,11 +1847,11 @@ class AurynApp:
         self._process.wait()
         GLib.idle_add(self._finish, self._process.returncode == 0)
 
-    def _run_download_windows(self, rip_path, url, env):
+    def _run_download_windows(self, rip_cmd, url, env):
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             self._process = subprocess.Popen(
-                [rip_path, "url", url],
+                rip_cmd + ["url", url],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -2701,13 +2805,13 @@ class AurynApp:
             fix_btn.set_halign(Gtk.Align.START)
 
             def on_fix(_b):
-                rip = self._find_rip_path()
+                rip = self._streamrip_cmd()
                 if not rip:
                     set_status("rip was not found. Install streamrip, then "
                                "run `rip config reset` in a terminal.", "error")
                     return
                 try:
-                    subprocess.run([rip, "config", "reset"],
+                    subprocess.run(rip + ["config", "reset"],
                                    capture_output=True, text=True, timeout=30)
                 except Exception:
                     pass
@@ -2778,7 +2882,7 @@ class AurynApp:
             return False
 
         def worker():
-            rip = self._find_rip_path()
+            rip = self._streamrip_cmd()
             if not rip:
                 GLib.idle_add(finish_worker, {
                     "state": "error",
@@ -2796,7 +2900,7 @@ class AurynApp:
                              if IS_WINDOWS else 0)
             try:
                 proc = subprocess.Popen(
-                    [rip, "url", TIDAL_LOGIN_PROBE_URL],
+                    rip + ["url", TIDAL_LOGIN_PROBE_URL],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL, text=True, bufsize=1,
                     encoding="utf-8", errors="replace",
@@ -3126,6 +3230,12 @@ class AurynApp:
 
             cfg_path = self._streamrip_config_path()
             if not os.path.exists(cfg_path):
+                # streamrip is bundled on packaged Windows (and may be on PATH
+                # elsewhere), so try to create the config right here — that lets
+                # a first-run user paste an ARL and download without any manual
+                # `rip config reset` step.
+                self._ensure_streamrip_config()
+            if not os.path.exists(cfg_path):
                 state["config_ok"] = False
                 body.pack_start(note(
                     '<span foreground="#FFB300" size="small">'
@@ -3137,14 +3247,14 @@ class AurynApp:
                 fix_btn.get_style_context().add_class("neutral-btn")
                 fix_btn.set_halign(Gtk.Align.START)
                 def on_fix(_b):
-                    rip = self._find_rip_path()
+                    rip = self._streamrip_cmd()
                     if not rip:
                         set_status(
                             "rip was not found. Install streamrip, then run "
                             "`rip config reset` in a terminal.", "error")
                         return
                     try:
-                        subprocess.run([rip, "config", "reset"],
+                        subprocess.run(rip + ["config", "reset"],
                                        capture_output=True, text=True, timeout=30)
                     except Exception:
                         pass
@@ -3417,6 +3527,8 @@ class AurynApp:
                     if not arl:
                         set_status("Enter a Deezer ARL token.", "warn")
                         continue
+                    if not os.path.exists(cfg_path):
+                        self._ensure_streamrip_config()
                     ok, err = self._write_streamrip_section(
                         cfg_path, "deezer", {"arl": arl}, {"arl": ["arl"]},
                     )
@@ -3586,6 +3698,19 @@ class AurynApp:
 
 
 if __name__ == "__main__":
+    # PyInstaller best practice: keep any library that uses multiprocessing
+    # from re-launching the GUI when the frozen exe re-execs itself.
+    import multiprocessing
+    multiprocessing.freeze_support()
+
+    # Multi-call entry point: a packaged build runs the bundled streamrip in
+    # this same frozen interpreter via `Auryn.exe --run-streamrip <args…>`.
+    # Handle it first, before importing GTK, so the streamrip child never
+    # opens a window. Everything after the flag is passed to streamrip as-is.
+    if streamrip_exec.RUN_STREAMRIP_FLAG in sys.argv:
+        _idx = sys.argv.index(streamrip_exec.RUN_STREAMRIP_FLAG)
+        raise SystemExit(streamrip_exec.dispatch_streamrip(sys.argv[_idx + 1:]))
+
     if IS_MACOS:
         print("Auryn is not supported on macOS yet. Please use Linux or Windows.")
         raise SystemExit(1)

@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -110,12 +110,53 @@ hiddenimports += [
 ]
 
 # ---------------------------------------------------------------------------
+# Bundle streamrip (and its dependencies) into the app
+# ---------------------------------------------------------------------------
+# This is what makes the Windows package self-contained: the user never
+# installs Python, pip or streamrip by hand. streamrip is run in Auryn's own
+# frozen interpreter via the `--run-streamrip` multi-call entry point (see
+# core.streamrip_exec), so collecting its modules, data and dist metadata is
+# enough — no separate rip.exe is needed.
+#
+# The CI Windows workflow `pip install`s streamrip into the MINGW64 Python
+# *before* invoking PyInstaller. If streamrip is not installed at build time
+# (e.g. a local GTK-only smoke build), the build still succeeds and the
+# packaged app falls back to a system `rip` at runtime.
+binaries = []
+try:
+    sr_datas, sr_binaries, sr_hiddenimports = collect_all("streamrip")
+    datas += sr_datas
+    binaries += sr_binaries
+    hiddenimports += sr_hiddenimports
+    hiddenimports += collect_submodules("streamrip")
+    print(f"[Auryn.spec] Bundling streamrip: "
+          f"{len(sr_datas)} data, {len(sr_binaries)} binaries, "
+          f"{len(sr_hiddenimports)} hidden imports.")
+    # Dist metadata so importlib.metadata can resolve the `rip` console script
+    # entry point at runtime. streamrip's own metadata is the important one;
+    # the rest are best-effort for libraries that read their version at runtime.
+    for _dist in ("streamrip", "mutagen", "click", "rich", "aiohttp"):
+        try:
+            datas += copy_metadata(_dist)
+        except Exception:
+            pass
+    # Dependencies PyInstaller's analysis sometimes misses for streamrip.
+    hiddenimports += [
+        "streamrip.rip.cli",
+        "mutagen", "aiohttp", "click", "rich", "tomli", "tomli_w",
+        "Cryptodome", "Cryptodome.Cipher", "Cryptodome.Cipher.Blowfish",
+    ]
+except Exception as exc:
+    print(f"[Auryn.spec] WARNING: streamrip was not collected ({exc}). "
+          f"The packaged app will fall back to a system 'rip' at runtime.")
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 a = Analysis(
     [str(SRC_DIR / "Auryn.py")],
     pathex=[str(SRC_DIR)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
