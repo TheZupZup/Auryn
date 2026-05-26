@@ -5,15 +5,17 @@
 <h1 align="center">Auryn</h1>
 
 <p align="center">
-  <b>A privacy-friendly desktop GUI for <a href="https://github.com/nathom/streamrip">streamrip</a>.</b><br>
-  Build and organize a high-quality local music library — no terminal required.
+  <b>Build your own music library.</b><br>
+  A privacy-friendly desktop GUI for <a href="https://github.com/nathom/streamrip">streamrip</a> —
+  download from Deezer, Qobuz, TIDAL &amp; SoundCloud straight into a
+  NAS / Jellyfin / Plex-friendly folder. No terminal required.
 </p>
 
 <p align="center">
   <a href="https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg" alt="Python application CI"></a>
   <a href="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml/badge.svg" alt="Linux packages"></a>
   <a href="https://github.com/TheZupZup/Auryn/releases/latest"><img src="https://img.shields.io/github/v/release/TheZupZup/Auryn?label=release" alt="Latest release"></a>
-  <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/github/license/TheZupZup/Auryn" alt="License: GPL-3.0"></a>
+  <a href="https://www.mozilla.org/en-US/MPL/2.0/"><img src="https://img.shields.io/github/license/TheZupZup/Auryn" alt="License: MPL-2.0"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20(experimental)-blue" alt="Platform: Linux, experimental Windows">
 </p>
 
@@ -25,10 +27,12 @@
 
 ## What is Auryn?
 
-Auryn is a clean, dark-themed graphical front-end for [streamrip](https://github.com/nathom/streamrip),
-the open-source command-line audio downloader. It turns streamrip's terminal
-workflow into a one-window desktop app: paste a link, pick a quality, and watch
-progress, metadata, cover art, and lyrics appear as your library grows.
+Auryn is a clean, dark-themed graphical front-end for
+[streamrip](https://github.com/nathom/streamrip), the open-source command-line
+audio downloader. It turns streamrip's terminal workflow into a one-window
+desktop app: **paste a link, pick a quality, and watch progress, metadata,
+cover art, and lyrics appear as your library grows** — then drop the result
+straight into Jellyfin, Plex, Symfonium, Plexamp, or any offline player.
 
 Auryn does **not** host, distribute, or provide access to any content. It is a
 GUI wrapper around a tool you install yourself — you supply your own
@@ -37,14 +41,41 @@ services you access.
 
 ---
 
+## Why Auryn?
+
+- **No terminal needed.** Everything streamrip does from the command line —
+  setup, credentials, quality, downloads — wrapped in a single window.
+- **Build a library, not a download dump.** Auryn can sort finished downloads
+  into a tidy `Album Artist / Album / Quality` tree (with a dedicated
+  `Playlists` folder) so **Jellyfin, Plex, Symfonium and Plexamp index it
+  instantly**. Point Auryn at your NAS share and you're done.
+- **Privacy-friendly & local-first.** Your music lives on *your* disk or NAS.
+  Auryn has no account, no telemetry, and ships no API keys — you bring your
+  own service credentials, and they're stored in streamrip's own config, never
+  printed to the log.
+- **Honest about what works.** **Deezer is recommended** for large-catalog
+  workflows, **Qobuz is best for Hi-Res** albums, and **TIDAL is experimental**
+  because of upstream authentication limitations. No overpromising.
+- **Rich metadata at a glance.** A protected sidebar shows cover art, album
+  artist, album, quality, track count, UPC, and release date, plus a Lyrics
+  tab.
+- **Cross-platform.** **Linux-first**, with installable `.deb` and `.rpm`
+  packages. **Windows is experimental but working**, via a self-contained build.
+
+---
+
 ## Features
 
 - **Deezer (recommended)** — the most reliable choice for large-catalog
   workflows, with FLAC 16/44.1 downloads.
 - **Qobuz Hi-Res** — best option when you want 24-bit / Hi-Res audio.
-- **TIDAL (experimental)** — supported, but authentication has known
-  limitations and may require manual setup.
-- **SoundCloud** — supported for public tracks and sets.
+- **TIDAL (experimental)** — supported, but authentication has known upstream
+  limitations and may require manual repair/resync.
+- **SoundCloud** — supported for public tracks and sets, handy for remixes and
+  community uploads.
+- **Library-friendly organisation** — sort downloads into
+  `Album Artist / Album / Quality` folders, ready for Jellyfin / Plex /
+  Symfonium / Plexamp.
 - **Sequential download queue** — line up multiple URLs; they run one after
   another.
 - **Metadata & cover sidebar** — artist, album, quality, track count, UPC, and
@@ -64,11 +95,15 @@ services you access.
 
 | Service | Status | Best for | Typical quality |
 |---|---|---|---|
-| **Deezer** | ✅ Recommended | Large catalogs, reliable downloads | FLAC 16/44.1 |
-| **Qobuz** | ✅ Supported | Hi-Res audio | FLAC up to 24-bit |
-| **TIDAL** | ⚠️ Experimental | — | Authentication has known limitations |
-| **SoundCloud** | ✅ Supported | Public tracks & sets | Service-dependent |
+| **Deezer** | Recommended | Large catalogs, reliable downloads | FLAC 16/44.1 |
+| **Qobuz** | Supported | Hi-Res albums, strong metadata | FLAC up to 24-bit |
+| **TIDAL** | Experimental | — (auth may need repair/resync) | Service-dependent |
+| **SoundCloud** | Supported | Public tracks, sets, remixes | Service-dependent |
 
+> **Deezer is recommended** for large-catalog workflows. **Qobuz is best for
+> Hi-Res albums.** **TIDAL is experimental** due to upstream authentication
+> behaviour and may require re-authenticating through streamrip.
+>
 > You provide your own account credentials. Auryn ships no application IDs,
 > secrets, or API keys.
 
@@ -97,7 +132,7 @@ sudo rpm -i Auryn-*.rpm
 
 **Windows (experimental)**
 
-1. Download the `auryn-windows-onedir-<version>.zip` from the
+1. Download `auryn-windows-onedir-<version>.zip` from the
    [**Releases**](https://github.com/TheZupZup/Auryn/releases/latest) page.
 2. Extract it anywhere.
 3. Run **`Auryn.exe`** from the extracted folder.
@@ -105,48 +140,119 @@ sudo rpm -i Auryn-*.rpm
 
 The packaged Windows build is **self-contained** — Python, GTK and streamrip
 are all bundled, so **no manual Python, pip or streamrip install is required**.
-Windows support is still experimental — see [Windows notes](#windows-experimental)
-before you start.
+See [Windows notes](#windows-experimental) before you start.
 
 ### From source
 
 ```bash
 git clone https://github.com/TheZupZup/Auryn.git
 cd Auryn
-pip install -r requirements.txt
 python3 src/Auryn.py
 ```
 
 Auryn needs **Python 3.11+**, **GTK 3 / PyGObject** (`python3-gi`,
-`gir1.2-gtk-3.0`), and **streamrip** on your `PATH`.
+`python3-gi-cairo`, `gir1.2-gtk-3.0`), and **streamrip** on your `PATH`. There
+are no extra Python packages to `pip install` — the GUI is pure PyGObject — so
+there is no `requirements.txt`; install GTK from your distro and streamrip with
+`pipx`/`pip` (see [Quick start](#quick-start)).
 
 ---
 
-## Setup
+## Quick start
 
-1. **Install streamrip** so the `rip` command is available:
+1. **Install Auryn** — a release package (recommended) or
+   [from source](#from-source).
+2. **Open Setup** — click **Setup** in the top bar.
+3. **Configure streamrip & credentials** — install streamrip if prompted, then
+   add your service credentials (for Deezer, paste your **ARL** cookie). Auryn
+   writes them to streamrip's own config.
+4. **Paste a music URL** — drop a Deezer, Qobuz, TIDAL, or SoundCloud album /
+   track / playlist link into the **Source URL** box.
+5. **Choose a quality** — pick from MP3 320 up to FLAC 24/96+ (Auryn clamps the
+   request to what the service actually supports).
+6. **Download** — click **Start Download** (or **Add to Queue** to line several
+   up). Watch progress, metadata, and cover art fill in.
+7. **Add the folder to your player** — point **Jellyfin / Plex / Symfonium /
+   Plexamp** at your download folder and enjoy your library.
 
-   ```bash
-   pipx install streamrip     # isolated CLI (recommended)
-   # or
-   pip install streamrip
-   ```
+> Tip: enable **"Organize downloads for music libraries"** to sort finished
+> tracks into a clean `Album Artist / Album / Quality` tree that media servers
+> index out of the box.
 
-   Verify it works: `rip --version`.
+---
 
-2. **Run the doctor** to confirm your environment is ready:
+## How credentials & privacy work
 
-   ```bash
-   python3 src/Auryn.py --doctor
-   ```
+- **streamrip is the backend.** Auryn never talks to Deezer/Qobuz/TIDAL/
+  SoundCloud directly for downloads — it drives the `streamrip` CLI you install.
+- **Your credentials go to streamrip, not Auryn.** When you save a Deezer ARL
+  or other login in Setup, Auryn writes it to **streamrip's** `config.toml`
+  (e.g. `~/.config/streamrip/config.toml`, or `%APPDATA%\streamrip\config.toml`
+  on Windows) — Auryn keeps no secret store of its own.
+- **No secrets in the log.** Tokens, ARLs, and passwords are never printed to
+  the log panel or to `--doctor` output. `--doctor` reports only *whether*
+  Deezer is configured, never the value.
+- **No telemetry, no account.** Auryn doesn't phone home and has no Auryn
+  account — your library stays local.
 
-   It checks Python, GTK/PyGObject, the `rip` executable, the streamrip config,
-   and your music folder. Add `--verbose` for extra detail when filing reports.
+---
 
-3. **Configure credentials** from inside Auryn via the **Setup** and
-   **Credentials** buttons. For Deezer, add your ARL cookie under
-   **Setup → Deezer**, then Save. Auryn writes to streamrip's own config — it
-   never stores secrets of its own.
+## Linux
+
+Linux is Auryn's primary, best-supported platform.
+
+- **Install** the `.deb` or `.rpm` from the
+  [Releases](https://github.com/TheZupZup/Auryn/releases/latest) page (see
+  [Installation](#installation)), or run
+  [from source](#from-source) with system GTK.
+- **Dependencies:** Python 3.11+, GTK 3 / PyGObject (`python3-gi`,
+  `python3-gi-cairo`, `gir1.2-gtk-3.0`), and streamrip on your `PATH`.
+- **streamrip:** install it once with `pipx install streamrip` (recommended) or
+  `pip install streamrip`, then confirm with `rip --version`.
+- **Self-check:** run `python3 src/Auryn.py --doctor` (add `--verbose` for
+  detail) to verify Python, GTK, the `rip` executable, the streamrip config,
+  and your music folder before your first download.
+- The `.deb` / `.rpm` packages and the desktop entry register the Auryn icon so
+  it appears in your application menu.
+
+---
+
+## Windows (experimental)
+
+Windows support is **experimental but working** — and the packaged build is
+**self-contained**: Python, the GTK3 runtime *and* streamrip are all bundled
+inside the app. Users do **not** install Python, pip or streamrip by hand.
+
+### Using the packaged build
+
+1. Download `auryn-windows-onedir-<version>.zip` from a release (or CI run).
+2. Extract it anywhere and run **`Auryn.exe`**.
+3. On first launch Auryn offers to set up Deezer — open **Setup**, paste your
+   Deezer **ARL** token, and Save. Your ARL is written only to streamrip's
+   config and is never shown or logged.
+4. Paste a Deezer link, pick a quality, and download.
+
+Auryn resolves the bundled streamrip internally (it runs streamrip in its own
+frozen interpreter), creates streamrip's config at
+`%APPDATA%\streamrip\config.toml`, and works with no terminal steps. Run
+`Auryn.exe --doctor` for a self-check that reports packaged mode, whether the
+bundled streamrip was found, the config path, and whether Deezer is configured
+(never the ARL itself).
+
+> **Deezer is recommended** on Windows — a large catalog and the simplest setup
+> (one ARL token). **TIDAL is experimental** and may still require manual
+> re-authentication. The build is unsigned and has no installer yet.
+
+### How it's built
+
+The `Windows packaging (experimental)` workflow
+([`.github/workflows/windows-exe.yml`](.github/workflows/windows-exe.yml)) runs
+on `windows-latest`, installs GTK3 + PyGObject from MSYS2 MINGW64 **and**
+`pip install`s streamrip into the same Python before PyInstaller collects
+everything into the bundle. See
+[docs/windows-packaging.md](docs/windows-packaging.md) for details.
+Contributions toward better Windows packaging (installers, code signing) are
+especially welcome.
 
 ---
 
@@ -169,61 +275,28 @@ and Save. Then retry the download.
 TIDAL is experimental. Auth tokens can expire or fail to refresh; you may need
 to re-authenticate via streamrip directly. Treat TIDAL as best-effort for now.
 
-**Windows notes**
-The packaged `auryn-windows-onedir` build bundles Python, GTK and streamrip,
-so there is nothing to install — just extract and run `Auryn.exe`, then add
-your Deezer ARL in Setup. (Running *from source* on Windows still requires
-GTK/PyGObject via MSYS2 and a separate streamrip install.) Downloads use a
-pipe-based subprocess path instead of the Linux PTY path, so progress output
-may differ slightly. The build is unsigned and has no installer. See
-[docs/windows-packaging.md](docs/windows-packaging.md).
+**Windows progress looks different**
+The Windows build uses a pipe-based subprocess path instead of the Linux PTY
+path, so live progress output may differ slightly. Functionality is the same.
+
+When filing an issue, the **Copy Log** button and `--doctor --verbose` output
+(neither of which contains your credentials) are the most useful things to
+attach.
 
 ---
 
-## Windows (experimental)
+## Roadmap
 
-Windows support is **experimental and not officially supported yet**, but the
-packaged build is now **self-contained**: Python, the GTK3 runtime *and*
-streamrip are all bundled inside the app. Users do **not** install Python, pip
-or streamrip by hand.
+Auryn is actively developed. Planned and in-progress ideas — contributions
+welcome:
 
-### Using the packaged build
+- A smoother Windows experience (installer + optional code signing).
+- More resilient TIDAL re-authentication / token repair.
+- More library-layout options for different media servers.
+- Quality-of-life polish: richer history, drag-and-drop URLs, more diagnostics.
 
-1. Download `auryn-windows-onedir-<version>.zip` from a release (or CI run).
-2. Extract it anywhere and run **`Auryn.exe`**.
-3. On first launch Auryn offers to set up Deezer — open **Setup**, paste your
-   Deezer **ARL** token, and Save. Your ARL is written only to streamrip's
-   config and is never shown or logged.
-4. Paste a Deezer link, pick a quality, and download.
-
-Auryn resolves the bundled streamrip internally (it runs streamrip in its own
-frozen interpreter), creates streamrip's config at
-`%APPDATA%\streamrip\config.toml`, and works offline-of-setup with no terminal
-steps. Run `Auryn.exe --doctor` for a self-check that reports packaged mode,
-whether the bundled streamrip was found, the config path, and whether Deezer is
-configured (never the ARL itself).
-
-> **Deezer is recommended** on Windows — a large catalog and the simplest setup
-> (one ARL token). **TIDAL is experimental** and may still require manual
-> re-authentication.
-
-### How it's built
-
-The `Windows packaging (experimental)` workflow
-([`.github/workflows/windows-exe.yml`](.github/workflows/windows-exe.yml)) runs
-on `windows-latest`, installs GTK3 + PyGObject from MSYS2 MINGW64 **and**
-`pip install`s streamrip into the same Python before PyInstaller collects
-everything into the bundle. It can produce:
-
-- `auryn-windows-onedir-<version>` — the self-contained standalone PyInstaller
-  `--onedir` bundle (Python + GTK3 + streamrip included). A post-build step
-  smoke-tests that the bundled streamrip actually runs.
-- `auryn-windows-source-<version>` — an always-produced source-only zip with a
-  `README-WINDOWS.txt` for running Auryn against a manually installed
-  MSYS2 / GTK3 / PyGObject toolchain (this fallback is *not* self-contained).
-
-Contributions toward better Windows packaging (installers, code signing) are
-especially welcome.
+This list is intentionally honest — it describes goals, not shipped features.
+Have an idea? [Open an issue](https://github.com/TheZupZup/Auryn/issues).
 
 ---
 
@@ -234,7 +307,8 @@ Contributions are welcome — please keep them small and focused.
 - **One change per PR.** Small, reviewable pull requests get merged faster.
 - **Never push to `main`.** Branch from `main` and open a PR against it. See
   [CONTRIBUTING.md](CONTRIBUTING.md) for the full branch rules.
-- **Don't change download logic or break Deezer support** without discussion.
+- **Don't change the download pipeline or break Deezer support** without
+  discussion.
 
 Run the same checks CI runs before opening a PR:
 
@@ -244,12 +318,8 @@ python3 -m pytest                     # unit tests (GTK-free core)
 flake8 . --select=E9,F63,F7,F82       # lint for real errors
 ```
 
----
-
-## Project status
-
-Auryn is actively developed and part of an open-source learning journey.
-Feedback, bug reports, and pull requests are all appreciated.
+The test suite covers the GTK-free `core/` package, so it runs without a
+display. New behaviour should come with a test where practical.
 
 ---
 

@@ -59,40 +59,71 @@ def _import_gtk():
 
 
 CSS = b"""
-* { font-family: 'Ubuntu', 'Cantarell', sans-serif; }
-window { background-color: #1a1a1a; color: #e8e8e8; }
-#header_bar { background-color: #0f0f0f; border-bottom: 2px solid #FF6B35; padding: 8px 14px; min-height: 48px; }
-#right_panel { background-color: #111111; border-left: 1px solid #252525; padding: 10px; min-width: 200px; }
-#url_entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 4px; padding: 7px 11px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; transition: border-color 120ms ease; }
-#url_entry:focus { border-color: #FF6B35; }
-.cred-entry { background-color: #0d0d0d; color: #e8e8e8; border: 1px solid #333; border-radius: 3px; padding: 6px 10px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #FF6B35; }
-.cred-entry:focus { border-color: #FF6B35; }
-#quality_box { background-color: #111111; border: 1px solid #252525; border-radius: 3px; padding: 5px 12px; }
-checkbutton { color: #aaaaaa; font-size: 12px; }
-checkbutton check { background-color: #0d0d0d; border-color: #444; border-radius: 2px; min-width: 14px; min-height: 14px; }
-checkbutton:checked check { background-color: #FF6B35; border-color: #FF6B35; }
-checkbutton label:hover { color: #FF6B35; }
-.neutral-btn { background-color: #252525; color: #aaaaaa; border: 1px solid #333; border-radius: 4px; padding: 5px 12px; font-size: 11px; transition: all 120ms ease; }
-.neutral-btn:hover { background-color: #2e2e2e; color: #ffffff; border-color: #FF6B35; }
-#btn_download { background-color: #FF6B35; color: #ffffff; border: none; border-radius: 4px; padding: 7px 18px; font-size: 13px; font-weight: bold; transition: background-color 120ms ease; }
-#btn_download:hover { background-color: #ff7d4d; }
-#btn_download:disabled { background-color: #333; color: #666; }
-#btn_stop { background-color: #c0392b; color: #ffffff; border: none; border-radius: 4px; padding: 7px 16px; font-size: 13px; font-weight: bold; transition: background-color 120ms ease; }
+/* Auryn dark theme -- black canvas, orange (#14B8A6) accent. */
+* { font-family: 'Inter', 'Ubuntu', 'Cantarell', sans-serif; }
+window { background-color: #161616; color: #e8e8e8; }
+
+/* -- Top bar -- */
+#header_bar { background-color: #0e0e0e; border-bottom: 2px solid #14B8A6; padding: 10px 16px; min-height: 52px; }
+
+/* -- Right metadata panel (protected layout -- spacing/polish only) -- */
+#right_panel { background-color: #131313; border-left: 1px solid #232323; padding: 14px; min-width: 212px; }
+
+/* -- Source URL input -- */
+#url_entry { background-color: #0c0c0c; color: #f0f0f0; border: 1px solid #2e2e2e; border-radius: 7px; padding: 10px 13px; font-family: 'Ubuntu Mono', monospace; font-size: 13px; caret-color: #14B8A6; transition: border-color 120ms ease, box-shadow 120ms ease; }
+#url_entry:focus { border-color: #14B8A6; box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.30); }
+.cred-entry { background-color: #0c0c0c; color: #f0f0f0; border: 1px solid #2e2e2e; border-radius: 6px; padding: 8px 11px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #14B8A6; transition: border-color 120ms ease; }
+.cred-entry:focus { border-color: #14B8A6; }
+
+/* -- Quality selector (segmented toggle buttons; draw-indicator=False
+      check buttons render on a `button` node) -- */
+#quality_box { background-color: #121212; border: 1px solid #242424; border-radius: 9px; padding: 5px 6px; }
+#quality_box button { background-image: none; background-color: transparent; box-shadow: none; color: #b2b2b2; font-size: 12px; padding: 5px 13px; border-radius: 6px; border: 1px solid transparent; transition: all 120ms ease; }
+#quality_box button:hover { color: #ffffff; background-color: #1e1e1e; }
+#quality_box button:checked { background-image: none; box-shadow: none; background-color: #14B8A6; color: #ffffff; font-weight: bold; }
+#quality_box button:checked label { color: #ffffff; }
+
+/* -- Plain checkboxes (cache / organise / playlists toggles) -- */
+checkbutton { color: #a8a8a8; font-size: 12px; }
+checkbutton check { background-image: none; background-color: #0c0c0c; border: 1px solid #444; border-radius: 4px; min-width: 15px; min-height: 15px; margin-right: 5px; transition: all 120ms ease; }
+checkbutton:checked check { background-image: none; background-color: #14B8A6; border-color: #14B8A6; }
+checkbutton label:hover { color: #14B8A6; }
+
+/* -- Buttons: secondary / primary / accent / destructive -- */
+.neutral-btn { background-image: none; background-color: #1e1e1e; color: #bdbdbd; border: 1px solid #2e2e2e; border-radius: 7px; padding: 6px 13px; font-size: 11px; transition: all 120ms ease; }
+.neutral-btn:hover { background-color: #262626; color: #ffffff; border-color: #14B8A6; }
+.neutral-btn:active { background-color: #2e2e2e; }
+#btn_download { background-image: none; background-color: #14B8A6; color: #ffffff; border: none; border-radius: 7px; padding: 9px 20px; font-size: 13px; font-weight: bold; box-shadow: 0 1px 5px rgba(20, 184, 166, 0.32); transition: background-color 120ms ease; }
+#btn_download:hover { background-color: #1FC8B7; }
+#btn_download:active { background-color: #0F9D8F; }
+#btn_download:disabled { background-color: #2a2a2a; color: #5e5e5e; box-shadow: none; }
+#btn_add_queue { background-image: none; background-color: rgba(20, 184, 166, 0.12); color: #14B8A6; border: 1px solid rgba(20, 184, 166, 0.50); border-radius: 7px; padding: 8px 16px; font-size: 12px; font-weight: bold; transition: all 120ms ease; }
+#btn_add_queue:hover { background-color: rgba(20, 184, 166, 0.22); border-color: #14B8A6; color: #3FD9C8; }
+#btn_stop { background-image: none; background-color: #c0392b; color: #ffffff; border: none; border-radius: 7px; padding: 9px 18px; font-size: 13px; font-weight: bold; transition: background-color 120ms ease; }
 #btn_stop:hover { background-color: #e74c3c; }
-#log_view { background-color: #080808; color: #bbbbbb; font-family: 'Ubuntu Mono', 'Courier New', monospace; font-size: 11px; padding: 8px; }
-#log_scroll { border: 1px solid #252525; border-radius: 3px; }
-#lyrics_label { font-family: 'Ubuntu', sans-serif; padding: 4px; }
-notebook { background-color: #0d0d0d; border: 1px solid #252525; border-radius: 3px; }
-notebook stack { background-color: #0d0d0d; padding: 10px; }
-notebook tab { background-color: #111111; color: #888; border: none; padding: 5px 14px; transition: color 120ms ease; }
+
+/* -- Log + lyrics -- */
+#log_view { background-color: #0a0a0a; color: #c9c9c9; font-family: 'Ubuntu Mono', 'Courier New', monospace; font-size: 12px; padding: 10px 12px; }
+#log_view text { background-color: #0a0a0a; }
+#log_scroll { border: 1px solid #242424; border-radius: 7px; }
+#lyrics_label { font-family: 'Ubuntu', sans-serif; font-size: 13px; padding: 6px; }
+
+/* -- Notebook tabs -- */
+notebook { background-color: #0c0c0c; border: 1px solid #242424; border-radius: 7px; }
+notebook header { background-color: #101010; }
+notebook stack { background-color: #0c0c0c; padding: 10px; }
+notebook tab { background-color: transparent; color: #888; border: none; border-bottom: 2px solid transparent; padding: 7px 16px; margin: 0 1px; transition: all 120ms ease; }
 notebook tab:hover { color: #cccccc; }
-notebook tab:checked { background-color: #FF6B35; color: #ffffff; font-weight: bold; }
-progressbar trough { background-color: #0d0d0d; border: 1px solid #252525; border-radius: 3px; min-height: 4px; }
-progressbar progress { background-color: #FF6B35; border-radius: 3px; min-height: 4px; }
-#footer_bar { background-color: #0a0a0a; border-top: 1px solid #222; padding: 3px 12px; min-height: 22px; }
-separator { background-color: #252525; }
-.history-row { background-color: #0d0d0d; border: 1px solid #1f1f1f; border-radius: 3px; }
-.history-row:hover { border-color: #333; }
+notebook tab:checked { color: #14B8A6; border-bottom: 2px solid #14B8A6; font-weight: bold; }
+notebook tab:checked label { color: #14B8A6; }
+
+/* -- Progress + footer + misc -- */
+progressbar trough { background-color: #0c0c0c; border: 1px solid #242424; border-radius: 4px; min-height: 6px; }
+progressbar progress { background-image: none; background-color: #14B8A6; border-radius: 4px; min-height: 6px; }
+#footer_bar { background-color: #0a0a0a; border-top: 1px solid #1e1e1e; padding: 4px 14px; min-height: 24px; }
+separator { background-color: #242424; min-width: 1px; min-height: 1px; }
+.history-row { background-color: #101010; border: 1px solid #1f1f1f; border-radius: 7px; padding: 2px; }
+.history-row:hover { border-color: #333; background-color: #141414; }
 """
 
 # Sourced from core.quality so the picker, the clamping rules and the log
@@ -502,7 +533,7 @@ class AurynApp:
         buf = self.log_view.get_buffer()
         buf.create_tag("ok",    foreground="#87a556")
         buf.create_tag("error", foreground="#e74c3c")
-        buf.create_tag("track", foreground="#FF6B35")
+        buf.create_tag("track", foreground="#14B8A6")
         buf.create_tag("info",  foreground="#555555")
         buf.create_tag("dim",   foreground="#333333")
 
@@ -561,7 +592,7 @@ class AurynApp:
                      .replace("<", "&lt;")
                      .replace(">", "&gt;"))
         self.folder_lbl.set_markup(
-            f'<span foreground="#FF6B35" size="small">📁  {safe_path}</span>')
+            f'<span foreground="#14B8A6" size="small">📁  {safe_path}</span>')
 
         try:
             quality_idx = int(self._config.get("quality_level", 3))
@@ -638,7 +669,7 @@ class AurynApp:
                          .replace("<", "&lt;")
                          .replace(">", "&gt;"))
             self.folder_lbl.set_markup(
-                f'<span foreground="#FF6B35" size="small">📁  {safe_path}</span>')
+                f'<span foreground="#14B8A6" size="small">📁  {safe_path}</span>')
             self._persist_preferences()
         dlg.destroy()
 
@@ -690,7 +721,7 @@ class AurynApp:
     def _history_status_color(status):
         return {
             "Completed":   "#87a556",
-            "Downloading": "#FF6B35",
+            "Downloading": "#14B8A6",
             "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
         }.get(status, "#aaaaaa")
@@ -852,7 +883,7 @@ class AurynApp:
     def _queue_status_color(status):
         return {
             "Queued":      "#888888",
-            "Downloading": "#FF6B35",
+            "Downloading": "#14B8A6",
             "Completed":   "#87a556",
             "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
@@ -1917,7 +1948,7 @@ class AurynApp:
                     m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                     if m:
                         GLib.idle_add(self.speed_lbl.set_markup,
-                            f'<span foreground="#FF6B35" size="small">⬇  {m.group(1)}  </span>')
+                            f'<span foreground="#14B8A6" size="small">⬇  {m.group(1)}  </span>')
 
         try:
             os.close(master_fd)
@@ -1970,7 +2001,7 @@ class AurynApp:
                 m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                 if m:
                     GLib.idle_add(self.speed_lbl.set_markup,
-                        f'<span foreground="#FF6B35" size="small">⬇  {m.group(1)}  </span>')
+                        f'<span foreground="#14B8A6" size="small">⬇  {m.group(1)}  </span>')
         except Exception:
             pass
 
@@ -3127,7 +3158,7 @@ class AurynApp:
             safe = (url.replace("&", "&amp;")
                     .replace("<", "&lt;").replace(">", "&gt;"))
             url_lbl.set_markup(
-                '<span foreground="#FF6B35" size="small">Login link: '
+                '<span foreground="#14B8A6" size="small">Login link: '
                 f'<tt>{safe}</tt></span>')
             set_status("Open the login link in your browser and approve this "
                        "device. Waiting for streamrip to receive the "
@@ -3969,7 +4000,7 @@ class AurynApp:
                 safe_track = track.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 safe_lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 clean_lyrics = re.sub(r'\[\d+:\d+\.\d+\]', '', safe_lyrics).strip()
-                markup = f'<span foreground="#FF6B35" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
+                markup = f'<span foreground="#14B8A6" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
                 GLib.idle_add(self.lyrics_label.set_markup, markup)
             else:
                 track_esc = track.replace("&", "&amp;").replace("<", "&lt;")
