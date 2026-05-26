@@ -103,26 +103,39 @@ produce a working GTK3 build today.
 
 ---
 
-## streamrip / `rip.exe` stays an external dependency
+## streamrip is bundled in the packaged Windows build
 
-We will **not** bundle streamrip or `rip.exe` inside the Windows package, at
-least for now:
+> **Updated decision.** Earlier this doc proposed keeping streamrip an external
+> dependency on Windows. That created too much first-run friction (install
+> Python 3.12 → `pip install streamrip` → fix PATH → generate config). The
+> packaged Windows build now **bundles streamrip and its Python dependencies**
+> so users can download the zip, run `Auryn.exe`, paste a Deezer ARL, and
+> download — with no manual Python/pip/streamrip install.
 
-- streamrip moves quickly; bundling pins users to whatever version was frozen
-  at release time and makes Auryn responsible for streamrip bugs we did not
-  cause.
-- streamrip pulls in a large transitive dependency graph (aiohttp, mutagen,
-  click, the per-service API libraries, …) that would inflate the installer
-  significantly.
-- It keeps Auryn cleanly positioned as a graphical interface for an existing,
-  separately-installed tool.
-- The application already discovers `rip.exe` on Windows via PATH, pipx,
-  per-user Python installs, and `~/.local/bin` (`_find_rip_path()` in
-  `src/Auryn.py`).
+How it works:
 
-If the missing-`rip.exe` UX needs to be friendlier (clearer error dialog,
-copy-paste install command, "Recheck" button), that is a separate UX PR — not
-a packaging decision.
+- The Windows CI workflow `pip install`s streamrip into the **same MINGW64
+  Python** that PyInstaller runs under, *before* the build. The spec then uses
+  `collect_all("streamrip")` + `copy_metadata(...)` to pull streamrip, its
+  transitive dependencies (aiohttp, mutagen, click, rich, …) and its dist
+  metadata into the bundle.
+- A relocated `rip.exe` console-script launcher cannot find the interpreter
+  that created it, so Auryn does **not** ship a standalone `rip.exe`. Instead
+  it runs streamrip in its **own frozen interpreter** via a hidden multi-call
+  entry point: `Auryn.exe --run-streamrip <args…>` (handled before GTK is
+  imported, so the streamrip child never opens a window).
+- Executable resolution lives in `core.streamrip_exec`
+  (`get_streamrip_executable`, `get_bundled_streamrip_path`,
+  `is_windows_packaged_build`). Search order: **(1)** streamrip bundled inside
+  the packaged Windows app, **(2)** an explicitly configured path, **(3)** the
+  system `PATH` / common install locations. Steps 2–3 preserve the historical
+  behaviour for Linux and run-from-source, which keep using the system `rip`
+  unchanged.
+
+Trade-offs accepted: the bundle is larger (streamrip's dependency graph) and a
+release pins a streamrip version, but the first-run experience is dramatically
+simpler, which is the point of a packaged build. Linux packaging is unaffected
+and still depends on a separately installed streamrip.
 
 ---
 

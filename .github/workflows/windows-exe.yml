@@ -6,6 +6,12 @@ name: Windows packaging (experimental)
 # (dist/Auryn/) on windows-latest using GTK3 + PyGObject from MSYS2
 # MINGW64, and uploads it as a downloadable artifact.
 #
+# The bundle is self-contained: streamrip is pip-installed into the MINGW64
+# Python before PyInstaller runs and collected into the app, so end users do
+# NOT need to install Python, pip or streamrip themselves. Auryn runs the
+# bundled streamrip in its own frozen interpreter (the --run-streamrip
+# multi-call entry point). A post-build step smoke-tests that path.
+#
 # To keep testers unblocked while the standalone bundle is still being
 # stabilised, the workflow ALSO always produces a source-fallback zip
 # (auryn-windows-source-<version>.zip) containing src/, assets/, the
@@ -32,6 +38,7 @@ on:
       - 'packaging/windows/**'
       - '.github/workflows/windows-exe.yml'
       - 'src/Auryn.py'
+      - 'src/core/**'
       - 'src/Auryn.ui'
       - 'assets/**'
   workflow_dispatch:
@@ -94,6 +101,48 @@ jobs:
             python -m pip install --break-system-packages pyinstaller
           fi
 
+      - name: Install streamrip into the packaged Python (self-contained build)
+        id: streamrip
+        # Install streamrip into the SAME MINGW64 Python that PyInstaller runs
+        # under, so the spec can collect it (and its dependencies) into the
+        # bundle. This is what lets end users run downloads without installing
+        # Python, pip or streamrip themselves.
+        #
+        # PyPI wheels target the MSVC (win_amd64) ABI, not MSYS2 MINGW, so
+        # streamrip's compiled deps are best installed from MSYS2 (MINGW-ABI
+        # prebuilt) first; pip then only needs the pure-Python remainder and
+        # any leftover C deps build with the MINGW gcc from base-devel.
+        #
+        # Tolerant by design: a failure here does NOT abort the job. It records
+        # whether streamrip was installed; the smoke test and final gate decide
+        # whether the produced bundle is self-contained.
+        run: |
+          set +e
+          # MINGW-ABI prebuilt native deps (best-effort; ignore unknown names).
+          pacman -S --noconfirm --needed \
+            mingw-w64-x86_64-python-aiohttp \
+            mingw-w64-x86_64-python-pillow \
+            mingw-w64-x86_64-python-requests \
+            mingw-w64-x86_64-python-rich \
+            mingw-w64-x86_64-python-mutagen \
+            mingw-w64-x86_64-python-tqdm 2>/dev/null || true
+
+          python -m pip install --upgrade --break-system-packages pip setuptools wheel
+
+          echo "Installing streamrip via pip ..."
+          python -m pip install --break-system-packages --prefer-binary streamrip 2>&1 | tee /tmp/streamrip_pip.log
+          rc=${PIPESTATUS[0]}
+          echo "pip exit code: ${rc}"
+
+          if python -c "import streamrip; print('streamrip import OK:', getattr(streamrip, '__version__', 'unknown'))"; then
+            echo "installed=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "installed=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::streamrip could not be installed into the MINGW64 Python; the bundle will not be self-contained on this run."
+            echo "--- last 40 lines of pip output ---"
+            tail -n 40 /tmp/streamrip_pip.log
+          fi
+
       - name: Show toolchain versions
         if: always()
         run: |
@@ -101,6 +150,7 @@ jobs:
           python --version
           pyinstaller --version
           python -c "import gi; print('gi:', gi.__version__)"
+          python -c "import streamrip; print('streamrip:', getattr(streamrip, '__version__', 'unknown'))"
           pacman -Q mingw-w64-x86_64-gtk3 \
                     mingw-w64-x86_64-python-gobject \
                     mingw-w64-x86_64-adwaita-icon-theme \
@@ -195,6 +245,28 @@ jobs:
             echo "Auryn.exe was NOT produced under dist/."
             printf 'exe_path=\n'   >> "$GITHUB_OUTPUT"
             printf 'bundle_dir=\n' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Smoke-test bundled streamrip
+        id: smoke
+        # Prove the packaged app can run streamrip with no user-installed
+        # Python: invoke the multi-call entry point and assert it exits 0.
+        # This is the core guarantee of a self-contained Windows build.
+        if: ${{ always() && steps.inspect_dist.outputs.exe_path != '' }}
+        run: |
+          set +e
+          EXE_PATH="${{ steps.inspect_dist.outputs.exe_path }}"
+          echo "Running: ${EXE_PATH} --run-streamrip --version"
+          out="$("${EXE_PATH}" --run-streamrip --version 2>&1)"
+          rc=$?
+          echo "exit code : ${rc}"
+          echo "output    : ${out}"
+          if [ "${rc}" -ne 0 ]; then
+            echo "::warning::Bundled streamrip did not run from the packaged exe (exit ${rc})."
+            echo "streamrip_ok=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "Bundled streamrip ran successfully from the packaged exe."
+            echo "streamrip_ok=1" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate --onedir bundle (best-effort report)
@@ -377,8 +449,9 @@ jobs:
 
       - name: Fail job if --onedir bundle is unusable
         # Do not fake success. If PyInstaller did not produce a complete
-        # bundle, fail the job so the experimental status is visible —
-        # the source-fallback zip is still uploaded above.
+        # bundle, or the bundled streamrip cannot run, fail the job so the
+        # experimental status is visible — the source-fallback zip is still
+        # uploaded above.
         if: always()
         run: |
           if [ "${{ steps.build_onedir.outcome }}" != "success" ] \
@@ -388,4 +461,19 @@ jobs:
             echo "The source-fallback zip artifact is still available for download."
             exit 1
           fi
-          echo "Standalone --onedir bundle passed validation."
+          # streamrip self-containment: only a hard requirement when streamrip
+          # was actually installed into the build Python. If the MINGW64
+          # toolchain could not install it on this run, surface a warning but
+          # do not fail — the .exe still builds and the resolver falls back to
+          # a system rip at runtime.
+          if [ "${{ steps.streamrip.outputs.installed }}" = "1" ]; then
+            if [ "${{ steps.smoke.outputs.streamrip_ok }}" != "1" ]; then
+              echo "::error::streamrip was installed at build time but the packaged app could not run it."
+              echo "Inspect 'Smoke-test bundled streamrip' — the bundle is not self-contained."
+              exit 1
+            fi
+            echo "Standalone --onedir bundle passed validation and the bundled streamrip runs."
+          else
+            echo "::warning::streamrip was not bundled on this run; the .exe built but is not self-contained."
+            echo "Standalone --onedir bundle passed validation (streamrip bundling skipped)."
+          fi
