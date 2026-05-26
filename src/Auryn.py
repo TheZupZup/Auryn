@@ -14,6 +14,7 @@ import urllib.request
 import json
 import tempfile
 import platform
+import shutil
 import sys
 import io
 import time
@@ -28,6 +29,7 @@ from core import metadata
 from core import streamrip_status
 from core import log_format
 from core import deezer
+from core import library
 from core import quality as qual
 from core import streamrip_exec
 
@@ -126,6 +128,16 @@ def detect_service_and_id(url):
     return (None, None)
 
 
+def url_is_playlist(url):
+    """Best-effort: True if *url* points at a playlist rather than an album.
+
+    Used only to route post-download organisation (playlists go under a
+    dedicated folder). SoundCloud calls them "sets". Conservative: anything
+    not clearly a playlist is treated as an album/track.
+    """
+    return bool(re.search(r'/(?:playlist|sets)/', url or "", re.I))
+
+
 def fetch_qobuz_meta(album_id):
     urls_to_try = [
         f"https://www.qobuz.com/api.json/0.2/album/get?album_id={album_id}&limit=50",
@@ -216,6 +228,13 @@ def is_first_launch():
 DEFAULT_CONFIG = {
     "download_folder": os.path.expanduser("~/Music"),
     "quality_level": 3,
+    # Organise finished downloads into a tidy NAS / Jellyfin / Symfonium
+    # library tree (<Album Artist>/<Album>/<Quality>/…). Post-processing only;
+    # the streamrip download pipeline is untouched, and on any failure the
+    # original files are left exactly where streamrip wrote them.
+    "organize_library": True,
+    # Group playlists under a dedicated "Playlists" folder.
+    "playlists_subfolder": True,
 }
 
 
@@ -388,6 +407,8 @@ class AurynApp:
         self.btn_log       = self.builder.get_object("btn_open_log")
         self.btn_copy_log  = self.builder.get_object("btn_copy_log")
         self.cb_clear_cache = self.builder.get_object("cb_clear_cache")
+        self.cb_organize    = self.builder.get_object("cb_organize_library")
+        self.cb_playlists_subfolder = self.builder.get_object("cb_playlists_subfolder")
         self.folder_lbl    = self.builder.get_object("folder_lbl")
         self.status_lbl    = self.builder.get_object("status_lbl")
         self.progress_bar  = self.builder.get_object("progress_bar")
@@ -448,6 +469,10 @@ class AurynApp:
         self._dl_invalid_url        = False
         self._dl_finished_marker    = False
         self._cfg_fingerprint_pre   = None
+        # Context captured per-download for post-download library organisation.
+        self._album_meta            = None
+        self._active_is_playlist    = False
+        self._active_quality        = None
 
         # ── Forcer can-focus sur les widgets interactifs ──
         self.url_entry.set_can_focus(True)
@@ -466,6 +491,10 @@ class AurynApp:
         self.btn_add_queue.set_can_focus(True)
         self.btn_clear_queue.set_can_focus(True)
         self.cb_clear_cache.set_can_focus(True)
+        if self.cb_organize is not None:
+            self.cb_organize.set_can_focus(True)
+        if self.cb_playlists_subfolder is not None:
+            self.cb_playlists_subfolder.set_can_focus(True)
         for cb in self._quality_checks:
             cb.set_can_focus(True)
 
@@ -500,6 +529,12 @@ class AurynApp:
 
         for i, cb in enumerate(self._quality_checks):
             cb.connect("toggled", self._on_quality_toggled, i)
+
+        if self.cb_organize is not None:
+            self.cb_organize.connect("toggled", self._on_organize_toggled)
+        if self.cb_playlists_subfolder is not None:
+            self.cb_playlists_subfolder.connect("toggled",
+                                                self._on_organize_toggled)
 
         # ── Restaurer les préférences enregistrées ──
         self._apply_saved_preferences()
@@ -538,12 +573,33 @@ class AurynApp:
                 cb.set_active(i == quality_idx)
                 cb.handler_unblock_by_func(self._on_quality_toggled)
 
+        if self.cb_organize is not None:
+            self.cb_organize.handler_block_by_func(self._on_organize_toggled)
+            self.cb_organize.set_active(
+                bool(self._config.get("organize_library", True)))
+            self.cb_organize.handler_unblock_by_func(self._on_organize_toggled)
+        if self.cb_playlists_subfolder is not None:
+            self.cb_playlists_subfolder.handler_block_by_func(
+                self._on_organize_toggled)
+            self.cb_playlists_subfolder.set_active(
+                bool(self._config.get("playlists_subfolder", True)))
+            self.cb_playlists_subfolder.handler_unblock_by_func(
+                self._on_organize_toggled)
+
+    def _on_organize_toggled(self, *_):
+        self._persist_preferences()
+
     def _persist_preferences(self):
         self._config["download_folder"] = self._dest_folder
         for i, cb in enumerate(self._quality_checks):
             if cb.get_active():
                 self._config["quality_level"] = i
                 break
+        if self.cb_organize is not None:
+            self._config["organize_library"] = self.cb_organize.get_active()
+        if self.cb_playlists_subfolder is not None:
+            self._config["playlists_subfolder"] = \
+                self.cb_playlists_subfolder.get_active()
         try:
             save_config(self._config)
         except OSError as e:
@@ -967,6 +1023,9 @@ class AurynApp:
         self._track_done       = 0
         self._total_tracks     = 0
         self._last_known_error = None
+        self._album_meta          = None
+        self._active_is_playlist  = url_is_playlist(url)
+        self._active_quality      = None
         self._reset_streamrip_signals()
         self._set_status("⏳  Fetching album info...", "info")
         self._set_lyrics('<span foreground="#555555"><i>Lyrics appear here once a track is identified.</i></span>')
@@ -986,6 +1045,9 @@ class AurynApp:
             url = self._prepare_deezer_url(url)
             if url is None:
                 return  # pre-check failed; UI/queue already updated
+        # The (possibly normalised / resolved) URL is now final; refine the
+        # album-vs-playlist routing used by post-download organisation.
+        self._active_is_playlist = url_is_playlist(url)
         service, item_id = detect_service_and_id(url)
         if service == "qobuz" and item_id:
             GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
@@ -1160,8 +1222,24 @@ class AurynApp:
         except Exception:
             pass
 
+    def _remember_album_meta(self, fields):
+        """Stash untruncated album artist/title for post-download organisation.
+
+        The sidebar labels are truncated for display, so the library organiser
+        relies on these full values to build folder names. Never raises on a
+        partial payload.
+        """
+        try:
+            artist = (fields.get("artist") or "").strip()
+            album = (fields.get("album") or "").strip()
+        except AttributeError:
+            return
+        if artist or album:
+            self._album_meta = {"artist": artist, "album": album}
+
     def _apply_deezer_meta(self, data):
         fields = metadata.deezer_album_fields(data)
+        self._remember_album_meta(fields)
         # Deezer values are kept slightly shorter to fit the historical layout.
         self._set_meta("Album Artist",  fields["artist"],       limit=28)
         self._set_meta("Album",         fields["album"],        limit=28)
@@ -1178,6 +1256,7 @@ class AurynApp:
 
     def _apply_qobuz_meta(self, data):
         fields = metadata.qobuz_album_fields(data)
+        self._remember_album_meta(fields)
         self._set_meta("Album Artist",  fields["artist"])
         self._set_meta("Album",         fields["album"])
         self._set_meta("Total Tracks",  fields["total_tracks"])
@@ -1646,6 +1725,7 @@ class AurynApp:
         db = os.path.join(os.path.dirname(cfg), "downloads.db")
 
         self._active_url = url
+        self._active_quality = quality
         self._tidal_auth_required = False
         self._tidal_auth_corrupted = False
         self._tb_noise_notified = False
@@ -2181,11 +2261,220 @@ class AurynApp:
         except Exception as exc:
             self._set_status(f"❌  Could not copy log: {exc}", "error")
 
+    # ── Post-download library organisation ────────────────────────────────
+    #
+    # Reorganise streamrip's finished output into a predictable
+    # NAS / Jellyfin / Symfonium library tree:
+    #
+    #   <Album Artist>/<Album Title>/<Quality>/NN. <Artist> - <Title>.<ext>
+    #   Playlists/<Playlist Name>/NN. <Artist> - <Title>.<ext> + playlist.m3u
+    #
+    # This is pure post-processing: the streamrip download pipeline is never
+    # touched, so Deezer/Qobuz downloads and the metadata sidebar are
+    # unaffected. It runs ONLY after a successful or partial download (files
+    # are no longer being written), preserves streamrip's track names, track
+    # numbers, embedded tags and cover.jpg, never overwrites a different file,
+    # and on ANY failure leaves every file exactly where streamrip wrote it.
+    #
+    # FLAC bit-depth / sample-rate per streamrip quality tier (2..4), used to
+    # label the <Quality> folder for lossless downloads. Lossy formats get a
+    # container-only label (MP3/AAC have no meaningful bit depth).
+    _FLAC_QUALITY_SPECS = {2: (16, 44100), 3: (24, 96000), 4: (24, 192000)}
+
+    def _organize_download(self, folder):
+        """Reorganise *folder* into the library tree; return the recorded folder.
+
+        *folder* is the directory streamrip created under the destination.
+        Returns the (possibly new) top-level folder to show in history, or the
+        original folder unchanged when organisation is disabled, not
+        applicable, or failed. Files are never deleted on failure.
+        """
+        base = self._dest_folder
+        if not folder or not os.path.isdir(folder):
+            return folder
+        # Only relocate a freshly-created subfolder; never reorganise the
+        # destination root itself (that could sweep up unrelated files).
+        if os.path.abspath(folder) == os.path.abspath(base):
+            self._log(f"📂  Files saved to: {folder}\n", "info")
+            return folder
+        if not self._config.get("organize_library", True):
+            self._log(f"📂  Files saved to: {folder}\n", "info")
+            return folder
+        try:
+            if self._active_is_playlist:
+                result = self._organize_playlist(base, folder)
+            else:
+                result = self._organize_album(base, folder)
+        except Exception as exc:
+            self._log(
+                "⚠  Download finished, but library organization failed — "
+                "files were left in the original output folder.\n", "error")
+            self._log(f"    {folder}\n", "dim")
+            self._log(f"    ({type(exc).__name__}: {exc})\n", "dim")
+            return folder
+        if not result:
+            self._log(f"📂  Files saved to: {folder}\n", "info")
+            return folder
+        kind = "playlist" if self._active_is_playlist else "album"
+        self._log(f"🗂  Organized {kind} into library:\n    {result}\n", "ok")
+        return result
+
+    def _organize_album(self, base, folder):
+        meta = self._album_meta or {}
+        artist = meta.get("artist", "")
+        album = meta.get("album", "")
+        # Without album metadata we cannot build a clean artist/album path;
+        # leave the files where streamrip put them (no scary warning).
+        if not artist and not album:
+            return None
+        files = self._collect_files(folder)
+        if not files:
+            return None
+        names = [os.path.basename(p) for p in files]
+        quality = self._quality_folder_label(names)
+        moves = library.plan_album_layout(
+            names,
+            album_artist=artist or library.FALLBACK_ARTIST,
+            album_title=album or library.FALLBACK_ALBUM,
+            quality=quality,
+        )
+        abs_moves = [(src, os.path.join(base, *dst.split("/")))
+                     for src, (_name, dst) in zip(files, moves)]
+        self._execute_moves(abs_moves)
+        self._cleanup_empty_dirs(folder, base)
+        # Album-level folder (parent of the quality folder) for history.
+        parts = moves[0][1].split("/")
+        return os.path.join(base, *parts[:2])
+
+    def _organize_playlist(self, base, folder):
+        files = self._sort_playlist_files(self._collect_files(folder))
+        if not files:
+            return None
+        names = [os.path.basename(p) for p in files]
+        in_subfolder = self._config.get("playlists_subfolder", True)
+        parent = library.PLAYLISTS_DIR if in_subfolder else ""
+        plan = library.plan_playlist_layout(
+            names,
+            playlist_name=self._playlist_name(folder),
+            service=qual.service_for_url(self._active_url) or None,
+            playlist_id=self._playlist_id(),
+            parent=parent,
+        )
+        abs_moves = [(src, os.path.join(base, *dst.split("/")))
+                     for src, (_name, dst) in zip(files, plan["moves"])]
+        self._execute_moves(abs_moves)
+        dest_dir = os.path.join(base, *plan["folder"].split("/"))
+        self._write_playlist_m3u(dest_dir, plan["audio"])
+        self._cleanup_empty_dirs(folder, base)
+        return dest_dir
+
+    def _quality_folder_label(self, names):
+        """Build the <Quality> folder label from the files actually written."""
+        container = library.dominant_container(names) or "Audio"
+        bit = rate = None
+        if container == "FLAC":
+            service = qual.service_for_url(self._active_url)
+            clamped = (qual.clamp_quality(service, self._active_quality)
+                       if service else self._active_quality)
+            try:
+                spec = self._FLAC_QUALITY_SPECS.get(int(clamped))
+            except (TypeError, ValueError):
+                spec = None
+            if spec:
+                bit, rate = spec
+        return library.quality_folder(container, bit, rate)
+
+    @staticmethod
+    def _collect_files(folder):
+        """All files under *folder* (recursive), as absolute paths."""
+        collected = []
+        for root, _dirs, names in os.walk(folder):
+            for name in names:
+                collected.append(os.path.join(root, name))
+        return collected
+
+    @staticmethod
+    def _sort_playlist_files(files):
+        """Order files by their leading track number so playlist order holds."""
+        def key(path):
+            name = os.path.basename(path)
+            m = re.match(r'\s*(\d+)', name)
+            if m:
+                return (0, int(m.group(1)), name.lower())
+            return (1, 0, name.lower())
+        return sorted(files, key=key)
+
+    def _playlist_name(self, folder):
+        """Playlist name from streamrip's folder (it names it after the list)."""
+        return os.path.basename(os.path.normpath(folder))
+
+    def _playlist_id(self):
+        m = re.search(r'/(?:playlist|sets)/([\w-]+)',
+                      self._active_url or "", re.I)
+        return m.group(1) if m else None
+
+    def _execute_moves(self, abs_moves):
+        """Move each ``(src, dst)``; never overwrite a different file."""
+        for src, dst in abs_moves:
+            if os.path.abspath(src) == os.path.abspath(dst):
+                continue
+            if not os.path.exists(src):
+                continue
+            dst_dir = os.path.dirname(dst)
+            os.makedirs(dst_dir, exist_ok=True)
+            final = dst
+            if os.path.exists(final):
+                # Same content (e.g. a re-download) → keep the existing file.
+                try:
+                    if os.path.getsize(final) == os.path.getsize(src):
+                        os.remove(src)
+                        continue
+                except OSError:
+                    pass
+                # Different content → never overwrite; pick a unique name.
+                try:
+                    existing = set(os.listdir(dst_dir))
+                except OSError:
+                    existing = set()
+                final = os.path.join(
+                    dst_dir,
+                    library.dedupe_filename(os.path.basename(dst), existing))
+            shutil.move(src, final)
+
+    def _write_playlist_m3u(self, dest_dir, audio_names):
+        """Write playlist.m3u listing *audio_names* in order (best-effort)."""
+        if not audio_names:
+            return
+        try:
+            body = library.m3u_content(audio_names)
+            path = os.path.join(dest_dir, library.PLAYLIST_FILE)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            os.replace(tmp, path)
+        except OSError as exc:
+            self._log(f"⚠  Could not write {library.PLAYLIST_FILE}: {exc}\n",
+                      "error")
+
+    @staticmethod
+    def _cleanup_empty_dirs(folder, base):
+        """Remove directories emptied by the move, never the destination root."""
+        base_abs = os.path.abspath(base)
+        for root, _dirs, _files in os.walk(folder, topdown=False):
+            if os.path.abspath(root) == base_abs:
+                continue
+            try:
+                if not os.listdir(root):
+                    os.rmdir(root)
+            except OSError:
+                pass
+
     def _finish_full_success(self):
         self._set_status("✅  Download complete!", "ok")
         self.progress_bar.set_fraction(1.0)
         self._log("\n✅  All downloads finished!\n", "ok")
         folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot) or self._dest_folder
+        folder = self._organize_download(folder)
         self._history_set_status(self._current_history_entry, "Completed", folder=folder)
         self._queue_set_status(self._current_queue_item, "Completed")
 
@@ -2200,6 +2489,8 @@ class AurynApp:
         # Some tracks may still have landed; keep the folder link if one
         # was created so partial results stay reachable.
         folder = self._detect_new_folder(self._dest_folder, self._dest_dirs_snapshot)
+        if folder:
+            folder = self._organize_download(folder)
         self._history_set_status(self._current_history_entry, "Warning", folder=folder)
         self._queue_set_status(self._current_queue_item, "Warning")
 
