@@ -129,3 +129,70 @@ def qobuz_album_fields(data):
         "cover_url": cover_url,
         "cover_fallback": cover_fallback,
     }
+
+
+# ── Track lists for the structured progress view ──────────────────────────
+#
+# These feed core.download_session so the progress view can show real song
+# titles in order before streamrip prints anything. Like the field helpers
+# above they must tolerate partial / None / oddly-shaped payloads and always
+# return a (possibly empty) list — never raise.
+
+def _track_entry(number, title, artist):
+    """Build one normalised track dict, or ``None`` if it has no title."""
+    title = (str(title).strip() if title else "")
+    if not title:
+        return None
+    return {
+        "number": number,
+        "title": title,
+        "artist": (str(artist).strip() if artist else ""),
+    }
+
+
+def deezer_album_tracks(data):
+    """Return ``[{number, title, artist}, ...]`` from a Deezer album payload.
+
+    Deezer nests the track list under ``tracks -> data``. Missing / partial
+    entries are skipped rather than raising, and the track position falls
+    back to the list order when absent.
+    """
+    data = _safe_dict(data)
+    items = _safe_dict(data.get("tracks")).get("data")
+    if not isinstance(items, list):
+        return []
+    out = []
+    for i, raw in enumerate(items):
+        raw = _safe_dict(raw)
+        number = raw.get("track_position") or (i + 1)
+        artist = _safe_dict(raw.get("artist")).get("name", "") or ""
+        entry = _track_entry(number, raw.get("title"), artist)
+        if entry:
+            out.append(entry)
+    return out
+
+
+def qobuz_album_tracks(data):
+    """Return ``[{number, title, artist}, ...]`` from a Qobuz album payload.
+
+    Qobuz nests the track list under ``tracks -> items`` with a
+    ``performer`` per track (falling back to the album artist). Tolerant of
+    partial / None entries.
+    """
+    data = _safe_dict(data)
+    album_artist = (_safe_dict(data.get("artist")).get("name", "")
+                    or _safe_dict(data.get("performer")).get("name", "")
+                    or "")
+    items = _safe_dict(data.get("tracks")).get("items")
+    if not isinstance(items, list):
+        return []
+    out = []
+    for i, raw in enumerate(items):
+        raw = _safe_dict(raw)
+        number = raw.get("track_number") or (i + 1)
+        artist = (_safe_dict(raw.get("performer")).get("name", "")
+                  or album_artist)
+        entry = _track_entry(number, raw.get("title"), artist)
+        if entry:
+            out.append(entry)
+    return out
