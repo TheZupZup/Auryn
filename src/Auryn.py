@@ -20,6 +20,7 @@ import io
 import time
 import contextlib
 import webbrowser
+from string import Template
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.errors import parse_streamrip_error
@@ -59,86 +60,123 @@ def _import_gtk():
     from gi.repository import Gtk, GLib, Gdk, GdkPixbuf, Pango
 
 
-CSS = b"""
-/* Auryn dark theme -- black canvas, teal (#14B8A6) accent.
-   Text on the bright teal accent is dark charcoal (#0a0a0a) for strong contrast. */
-* { font-family: 'Inter', 'Ubuntu', 'Cantarell', sans-serif; }
-window { background-color: #161616; color: #e8e8e8; }
+# ── Visual identity ──────────────────────────────────────────────────────────
+# Auryn's accent is a premium deep-teal → aqua family (jade / sea-glass).
+# Gradients are reserved for branding and key active states (the logo, the
+# Start Download button, the selected quality, progress); everything else uses
+# the solid accent so the app stays calm, readable and serious for long
+# sessions. Bright accents always carry dark charcoal "ink" text for contrast.
+ACCENT       = "#18C5AD"   # primary jade-teal accent (text, borders, active)
+ACCENT_DEEP  = "#0C8275"   # deep teal — gradient start / pressed
+ACCENT_AQUA  = "#2FD6BE"   # soft aqua — gradient end / hover highlight
+ACCENT_GLOW  = "#5CE9D5"   # sea-glass — focus rings / faint glows
+ACCENT_INK   = "#06241F"   # dark charcoal-teal text on bright accent/gradient
 
-/* -- Top bar -- */
-#header_bar { background-color: #0e0e0e; border-bottom: 2px solid #14B8A6; padding: 10px 16px; min-height: 52px; }
+# Layered near-black canvas, very lightly cooled toward the accent so the
+# whole window feels cohesive rather than flat neutral grey.
+BG_WINDOW    = "#121514"
+BG_HEADER    = "#0B0E0D"
+BG_PANEL     = "#0F1211"
+BG_INPUT     = "#0A0C0B"
+BG_LOG       = "#080A09"
+BORDER       = "#202423"
+TEXT         = "#E8E8E8"
+
+# Gradients. Each is paired with a solid background-color fallback in the CSS
+# below, so a GTK build that cannot parse a gradient still renders a clean
+# solid-accent surface rather than a broken (transparent) one.
+GRAD_PRIMARY        = "linear-gradient(to bottom right, %s, %s)" % (ACCENT_DEEP, ACCENT_AQUA)
+GRAD_PRIMARY_HOVER  = "linear-gradient(to bottom right, #0F9482, #45E0CC)"
+GRAD_PRIMARY_ACTIVE = "linear-gradient(to bottom right, #0A6F64, #25C3AC)"
+GRAD_PROGRESS       = "linear-gradient(to right, %s, %s)" % (ACCENT_DEEP, ACCENT_AQUA)
+
+CSS = Template("""
+/* Auryn dark theme — layered near-black canvas, premium deep-teal → aqua
+   accent. Gradients are reserved for branding and key active states; text on
+   bright accents is dark charcoal ($ink) for strong contrast. */
+* { font-family: 'Inter', 'Ubuntu', 'Cantarell', sans-serif; }
+window { background-color: $bg_window; color: $text; }
+
+/* -- Top bar (branding hero) -- */
+#header_bar { background-color: $bg_header; border-bottom: 2px solid $accent; box-shadow: 0 3px 12px -7px rgba(24, 197, 173, 0.70); padding: 11px 18px; min-height: 54px; }
 
 /* -- Right metadata panel (protected layout -- spacing/polish only) -- */
-#right_panel { background-color: #131313; border-left: 1px solid #232323; padding: 14px; min-width: 212px; }
+#right_panel { background-color: $bg_panel; border-left: 1px solid $border; padding: 15px 14px; min-width: 212px; }
 
 /* -- Source URL input -- */
-#url_entry { background-color: #0c0c0c; color: #f0f0f0; border: 1px solid #2e2e2e; border-radius: 7px; padding: 10px 13px; font-family: 'Ubuntu Mono', monospace; font-size: 13px; caret-color: #14B8A6; transition: border-color 120ms ease, box-shadow 120ms ease; }
-#url_entry:focus { border-color: #14B8A6; box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.30); }
-.cred-entry { background-color: #0c0c0c; color: #f0f0f0; border: 1px solid #2e2e2e; border-radius: 6px; padding: 8px 11px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: #14B8A6; transition: border-color 120ms ease; }
-.cred-entry:focus { border-color: #14B8A6; }
+#url_entry { background-color: $bg_input; color: #f2f2f2; border: 1px solid $border; border-radius: 9px; padding: 11px 14px; font-family: 'Ubuntu Mono', monospace; font-size: 13px; caret-color: $accent; transition: border-color 140ms ease, box-shadow 140ms ease; }
+#url_entry:focus { border-color: $accent; box-shadow: 0 0 0 3px rgba(92, 233, 213, 0.22); }
+.cred-entry { background-color: $bg_input; color: #f2f2f2; border: 1px solid $border; border-radius: 7px; padding: 8px 12px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: $accent; transition: border-color 140ms ease, box-shadow 140ms ease; }
+.cred-entry:focus { border-color: $accent; box-shadow: 0 0 0 3px rgba(92, 233, 213, 0.18); }
 
 /* -- Quality selector (segmented toggle buttons; draw-indicator=False
       check buttons render on a `button` node) -- */
-#quality_box { background-color: #121212; border: 1px solid #242424; border-radius: 9px; padding: 5px 6px; }
-#quality_box button { background-image: none; background-color: transparent; box-shadow: none; color: #b2b2b2; font-size: 12px; padding: 5px 13px; border-radius: 6px; border: 1px solid transparent; transition: all 120ms ease; }
-#quality_box button:hover { color: #ffffff; background-color: #1e1e1e; }
-#quality_box button:checked { background-image: none; box-shadow: none; background-color: #14B8A6; color: #0a0a0a; font-weight: bold; }
-#quality_box button:checked label { color: #0a0a0a; }
+#quality_box { background-color: $bg_input; border: 1px solid $border; border-radius: 10px; padding: 5px 6px; }
+#quality_box button { background-image: none; background-color: transparent; box-shadow: none; color: #aeb3b1; font-size: 12px; padding: 6px 14px; border-radius: 7px; border: 1px solid transparent; transition: all 140ms ease; }
+#quality_box button:hover { color: #ffffff; background-color: #1b201e; }
+#quality_box button:checked { background-color: $accent; background-image: $grad_primary; color: $ink; font-weight: bold; box-shadow: 0 1px 7px -2px rgba(24, 197, 173, 0.60); }
+#quality_box button:checked label { color: $ink; }
 
 /* -- Plain checkboxes (cache / organise / playlists toggles) -- */
-checkbutton { color: #a8a8a8; font-size: 12px; }
-checkbutton check { background-image: none; background-color: #0c0c0c; border: 1px solid #444; border-radius: 4px; min-width: 15px; min-height: 15px; margin-right: 5px; transition: all 120ms ease; }
-checkbutton:checked check { background-image: none; background-color: #14B8A6; border-color: #14B8A6; color: #0a0a0a; }
-checkbutton label:hover { color: #14B8A6; }
+checkbutton { color: #a7acaa; font-size: 12px; }
+checkbutton check { background-image: none; background-color: $bg_input; border: 1px solid #404442; border-radius: 5px; min-width: 16px; min-height: 16px; margin-right: 6px; transition: all 140ms ease; }
+checkbutton:checked check { background-color: $accent; background-image: $grad_primary; border-color: $accent; color: $ink; }
+checkbutton label:hover { color: $accent; }
 
 /* -- Buttons: secondary / primary / accent / destructive -- */
-.neutral-btn { background-image: none; background-color: #1e1e1e; color: #bdbdbd; border: 1px solid #2e2e2e; border-radius: 7px; padding: 6px 13px; font-size: 11px; transition: all 120ms ease; }
-.neutral-btn:hover { background-color: #262626; color: #ffffff; border-color: #14B8A6; }
-.neutral-btn:active { background-color: #2e2e2e; }
-#btn_download { background-image: none; background-color: #14B8A6; color: #0a0a0a; border: none; border-radius: 7px; padding: 9px 20px; font-size: 13px; font-weight: bold; box-shadow: 0 1px 5px rgba(20, 184, 166, 0.32); transition: background-color 120ms ease; }
-#btn_download:hover { background-color: #1FC8B7; }
-#btn_download:active { background-color: #0F9D8F; }
-#btn_download:disabled { background-color: #2a2a2a; color: #5e5e5e; box-shadow: none; }
-#btn_add_queue { background-image: none; background-color: rgba(20, 184, 166, 0.12); color: #14B8A6; border: 1px solid rgba(20, 184, 166, 0.50); border-radius: 7px; padding: 8px 16px; font-size: 12px; font-weight: bold; transition: all 120ms ease; }
-#btn_add_queue:hover { background-color: rgba(20, 184, 166, 0.22); border-color: #14B8A6; color: #3FD9C8; }
-#btn_stop { background-image: none; background-color: #c0392b; color: #ffffff; border: none; border-radius: 7px; padding: 9px 18px; font-size: 13px; font-weight: bold; transition: background-color 120ms ease; }
+.neutral-btn { background-image: none; background-color: #1b1f1d; color: #c2c7c5; border: 1px solid $border; border-radius: 8px; padding: 6px 14px; font-size: 11px; transition: all 140ms ease; }
+.neutral-btn:hover { background-color: #232826; color: #ffffff; border-color: $accent; }
+.neutral-btn:active { background-color: #2b302e; }
+#btn_download { background-color: $accent; background-image: $grad_primary; color: $ink; border: none; border-radius: 9px; padding: 10px 22px; font-size: 13px; font-weight: bold; box-shadow: 0 2px 14px -3px rgba(24, 197, 173, 0.55); transition: background-image 140ms ease, box-shadow 140ms ease; }
+#btn_download:hover { background-image: $grad_primary_hover; box-shadow: 0 4px 18px -3px rgba(47, 214, 190, 0.65); }
+#btn_download:active { background-image: $grad_primary_active; box-shadow: 0 1px 7px -3px rgba(24, 197, 173, 0.55); }
+#btn_download:disabled { background-color: #242927; background-image: none; color: #5b605e; box-shadow: none; }
+#btn_add_queue { background-image: none; background-color: rgba(24, 197, 173, 0.12); color: $accent; border: 1px solid rgba(24, 197, 173, 0.50); border-radius: 9px; padding: 9px 17px; font-size: 12px; font-weight: bold; transition: all 140ms ease; }
+#btn_add_queue:hover { background-color: rgba(24, 197, 173, 0.20); border-color: $accent; color: $accent_aqua; }
+#btn_stop { background-image: none; background-color: #c0392b; color: #ffffff; border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: bold; transition: background-color 140ms ease; }
 #btn_stop:hover { background-color: #e74c3c; }
 
 /* -- Log + lyrics -- */
-#log_view { background-color: #0a0a0a; color: #c9c9c9; font-family: 'Ubuntu Mono', 'Courier New', monospace; font-size: 12px; padding: 10px 12px; }
-#log_view text { background-color: #0a0a0a; }
-#log_scroll { border: 1px solid #242424; border-radius: 7px; }
-#lyrics_label { font-family: 'Ubuntu', sans-serif; font-size: 13px; padding: 6px; }
+#log_view { background-color: $bg_log; color: #c7ccca; font-family: 'Ubuntu Mono', 'Courier New', monospace; font-size: 12px; padding: 11px 13px; }
+#log_view text { background-color: $bg_log; }
+#log_scroll { border: 1px solid $border; border-radius: 9px; }
+#lyrics_label { font-family: 'Ubuntu', sans-serif; font-size: 13px; padding: 8px; }
 
 /* -- Notebook tabs -- */
-notebook { background-color: #0c0c0c; border: 1px solid #242424; border-radius: 7px; }
-notebook header { background-color: #101010; }
-notebook stack { background-color: #0c0c0c; padding: 10px; }
-notebook tab { background-color: transparent; color: #888; border: none; border-bottom: 2px solid transparent; padding: 7px 16px; margin: 0 1px; transition: all 120ms ease; }
-notebook tab:hover { color: #cccccc; }
-notebook tab:checked { color: #14B8A6; border-bottom: 2px solid #14B8A6; font-weight: bold; }
-notebook tab:checked label { color: #14B8A6; }
+notebook { background-color: $bg_input; border: 1px solid $border; border-radius: 9px; }
+notebook header { background-color: #0d100f; }
+notebook stack { background-color: $bg_input; padding: 10px; }
+notebook tab { background-color: transparent; color: #868b89; border: none; border-bottom: 2px solid transparent; padding: 8px 17px; margin: 0 1px; transition: all 140ms ease; }
+notebook tab:hover { color: #cfd4d2; }
+notebook tab:checked { color: $accent; border-bottom: 2px solid $accent; font-weight: bold; }
+notebook tab:checked label { color: $accent; }
 
 /* -- Progress + footer + misc -- */
-progressbar trough { background-color: #0c0c0c; border: 1px solid #242424; border-radius: 4px; min-height: 6px; }
-progressbar progress { background-image: none; background-color: #14B8A6; border-radius: 4px; min-height: 6px; }
-#footer_bar { background-color: #0a0a0a; border-top: 1px solid #1e1e1e; padding: 4px 14px; min-height: 24px; }
-separator { background-color: #242424; min-width: 1px; min-height: 1px; }
-.history-row { background-color: #101010; border: 1px solid #1f1f1f; border-radius: 7px; padding: 2px; }
-.history-row:hover { border-color: #333; background-color: #141414; }
+progressbar trough { background-color: $bg_input; border: 1px solid $border; border-radius: 5px; min-height: 7px; }
+progressbar progress { background-color: $accent; background-image: $grad_progress; border-radius: 5px; min-height: 7px; }
+#footer_bar { background-color: $bg_log; border-top: 1px solid #1b1f1d; padding: 5px 16px; min-height: 24px; }
+separator { background-color: $border; min-width: 1px; min-height: 1px; }
+.history-row { background-color: #101413; border: 1px solid #1e2221; border-radius: 9px; padding: 2px; }
+.history-row:hover { border-color: #313533; background-color: #141817; }
 
 /* -- Structured download progress view -- */
 #progress_summary { padding: 2px 2px 4px 2px; }
 .progress-head { padding: 2px 12px 6px 12px; }
-.progress-head label { color: #666666; }
-.progress-row { background-color: #101010; border: 1px solid #1f1f1f; border-radius: 7px; padding: 2px; }
-.progress-row:hover { border-color: #2c2c2c; background-color: #141414; }
-.track-bar trough { background-color: #0c0c0c; border: 1px solid #242424; border-radius: 3px; min-height: 5px; }
-.track-bar progress { background-image: none; background-color: #14B8A6; border-radius: 3px; min-height: 5px; }
+.progress-head label { color: #6a6f6d; }
+.progress-row { background-color: #101413; border: 1px solid #1e2221; border-radius: 9px; padding: 2px; }
+.progress-row:hover { border-color: #2b2f2d; background-color: #141817; }
+.track-bar trough { background-color: $bg_input; border: 1px solid $border; border-radius: 4px; min-height: 5px; }
+.track-bar progress { background-image: none; background-color: $accent; border-radius: 4px; min-height: 5px; }
 .track-bar.bar-done progress { background-color: #87a556; }
 .track-bar.bar-error progress { background-color: #e74c3c; }
 .track-bar.bar-skip progress { background-color: #5a5a5a; }
-"""
+""").substitute(
+    bg_window=BG_WINDOW, bg_header=BG_HEADER, bg_panel=BG_PANEL,
+    bg_input=BG_INPUT, bg_log=BG_LOG, border=BORDER, text=TEXT,
+    accent=ACCENT, accent_aqua=ACCENT_AQUA, ink=ACCENT_INK,
+    grad_primary=GRAD_PRIMARY, grad_primary_hover=GRAD_PRIMARY_HOVER,
+    grad_primary_active=GRAD_PRIMARY_ACTIVE, grad_progress=GRAD_PROGRESS,
+).encode("utf-8")
 
 # Sourced from core.quality so the picker, the clamping rules and the log
 # messages share one definition (the GTK widget labels live in Auryn.ui and
@@ -233,6 +271,29 @@ def download_cover(cover_url, size=185):
             return pb.scale_simple(size, size, GdkPixbuf.InterpType.BILINEAR)
     except Exception:
         pass
+    return None
+
+
+def resolve_asset_path(filename):
+    """Return the path to a bundled asset (icon PNG/SVG), or None.
+
+    Works both from source (``src/../assets``) and from a packaged build
+    where the assets ship next to the app (``<app>/assets``) or under the
+    PyInstaller temp root. Returns None when nothing matches so callers can
+    fall back gracefully without raising.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(here, "..", "assets", filename),
+        os.path.join(here, "assets", filename),
+        os.path.join(here, filename),
+    ]
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.insert(0, os.path.join(meipass, "assets", filename))
+    for path in candidates:
+        if os.path.exists(path):
+            return path
     return None
 
 
@@ -439,6 +500,8 @@ class AurynApp:
 
         # ── Récupérer tous les widgets depuis le .ui ──
         self.window        = self.builder.get_object("main_window")
+        self._app_icon_pixbuf = None
+        self._apply_app_icon()
         self.url_entry     = self.builder.get_object("url_entry")
         self.btn_download  = self.builder.get_object("btn_download")
         self.btn_stop      = self.builder.get_object("btn_stop")
@@ -553,7 +616,7 @@ class AurynApp:
         buf = self.log_view.get_buffer()
         buf.create_tag("ok",    foreground="#87a556")
         buf.create_tag("error", foreground="#e74c3c")
-        buf.create_tag("track", foreground="#14B8A6")
+        buf.create_tag("track", foreground="#18C5AD")
         buf.create_tag("info",  foreground="#555555")
         buf.create_tag("dim",   foreground="#333333")
 
@@ -616,7 +679,7 @@ class AurynApp:
                      .replace("<", "&lt;")
                      .replace(">", "&gt;"))
         self.folder_lbl.set_markup(
-            f'<span foreground="#14B8A6" size="small">📁  {safe_path}</span>')
+            f'<span foreground="#18C5AD" size="small">📁  {safe_path}</span>')
 
         try:
             quality_idx = int(self._config.get("quality_level", 3))
@@ -693,7 +756,7 @@ class AurynApp:
                          .replace("<", "&lt;")
                          .replace(">", "&gt;"))
             self.folder_lbl.set_markup(
-                f'<span foreground="#14B8A6" size="small">📁  {safe_path}</span>')
+                f'<span foreground="#18C5AD" size="small">📁  {safe_path}</span>')
             self._persist_preferences()
         dlg.destroy()
 
@@ -745,7 +808,7 @@ class AurynApp:
     def _history_status_color(status):
         return {
             "Completed":   "#87a556",
-            "Downloading": "#14B8A6",
+            "Downloading": "#18C5AD",
             "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
         }.get(status, "#aaaaaa")
@@ -907,7 +970,7 @@ class AurynApp:
     def _queue_status_color(status):
         return {
             "Queued":      "#888888",
-            "Downloading": "#14B8A6",
+            "Downloading": "#18C5AD",
             "Completed":   "#87a556",
             "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
@@ -1984,7 +2047,7 @@ class AurynApp:
                     m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                     if m:
                         GLib.idle_add(self.speed_lbl.set_markup,
-                            f'<span foreground="#14B8A6" size="small">⬇  {m.group(1)}  </span>')
+                            f'<span foreground="#18C5AD" size="small">⬇  {m.group(1)}  </span>')
 
         try:
             os.close(master_fd)
@@ -2037,7 +2100,7 @@ class AurynApp:
                 m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                 if m:
                     GLib.idle_add(self.speed_lbl.set_markup,
-                        f'<span foreground="#14B8A6" size="small">⬇  {m.group(1)}  </span>')
+                        f'<span foreground="#18C5AD" size="small">⬇  {m.group(1)}  </span>')
         except Exception:
             pass
 
@@ -2228,7 +2291,7 @@ class AurynApp:
 
     _PROG_STATUS_COLORS = {
         dsession.QUEUED:      "#888888",
-        dsession.DOWNLOADING: "#14B8A6",
+        dsession.DOWNLOADING: "#18C5AD",
         dsession.COMPLETE:    "#87a556",
         dsession.SKIPPED:     "#e0a83b",
         dsession.ERROR:       "#e74c3c",
@@ -2460,7 +2523,7 @@ class AurynApp:
     def _progress_detail_markup(self, track):
         if track.status == dsession.DOWNLOADING:
             txt = track.speed or "downloading…"
-            color = "#14B8A6"
+            color = "#18C5AD"
         elif track.status == dsession.COMPLETE:
             txt = self._progress_format_elapsed(track.elapsed) or "done"
             color = "#6f8f48"
@@ -2540,7 +2603,7 @@ class AurynApp:
             markup = ('<span foreground="#e74c3c" size="small" weight="bold">'
                       '❌  Download failed — see Raw Log.</span>')
         elif total > 0:
-            markup = (f'<span foreground="#14B8A6" size="small">'
+            markup = (f'<span foreground="#18C5AD" size="small">'
                       f'Downloading… {done}/{total} complete.</span>')
         else:
             markup = ('<span foreground="#777777" size="small">'
@@ -3592,7 +3655,7 @@ class AurynApp:
             safe = (url.replace("&", "&amp;")
                     .replace("<", "&lt;").replace(">", "&gt;"))
             url_lbl.set_markup(
-                '<span foreground="#14B8A6" size="small">Login link: '
+                '<span foreground="#18C5AD" size="small">Login link: '
                 f'<tt>{safe}</tt></span>')
             set_status("Open the login link in your browser and approve this "
                        "device. Waiting for streamrip to receive the "
@@ -4405,6 +4468,32 @@ class AurynApp:
         dlg.run()
         dlg.destroy()
 
+    def _apply_app_icon(self):
+        """Set the window / default icon from the bundled asset.
+
+        Fully guarded: a missing asset or a pixbuf error must never block
+        startup. Falls back to the themed "Auryn" icon registered by the
+        Linux packages when no asset file is found.
+        """
+        try:
+            pixbufs = []
+            for size in (256, 48, 32, 16):
+                path = resolve_asset_path(f"Auryn_{size}.png")
+                if not path:
+                    continue
+                try:
+                    pixbufs.append(GdkPixbuf.Pixbuf.new_from_file(path))
+                except Exception:
+                    pass
+            if pixbufs:
+                self._app_icon_pixbuf = pixbufs[0]
+                self.window.set_icon_list(pixbufs)
+                Gtk.Window.set_default_icon_list(pixbufs)
+            else:
+                self.window.set_icon_name("Auryn")
+        except Exception:
+            pass
+
     def _show_about(self, *_):
         dlg = Gtk.AboutDialog()
         dlg.set_transient_for(self.window)
@@ -4413,6 +4502,12 @@ class AurynApp:
         dlg.set_comments("GUI wrapper for streamrip\nDeezer • Qobuz • Tidal • SoundCloud")
         dlg.set_copyright("© 2025 TheZupZup")
         dlg.set_license_type(Gtk.License.GPL_3_0)
+        if self._app_icon_pixbuf is not None:
+            try:
+                dlg.set_logo(self._app_icon_pixbuf.scale_simple(
+                    96, 96, GdkPixbuf.InterpType.BILINEAR))
+            except Exception:
+                pass
         dlg.run()
         dlg.destroy()
 
@@ -4434,7 +4529,7 @@ class AurynApp:
                 safe_track = track.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 safe_lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 clean_lyrics = re.sub(r'\[\d+:\d+\.\d+\]', '', safe_lyrics).strip()
-                markup = f'<span foreground="#14B8A6" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
+                markup = f'<span foreground="#18C5AD" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
                 GLib.idle_add(self.lyrics_label.set_markup, markup)
             else:
                 track_esc = track.replace("&", "&amp;").replace("<", "&lt;")

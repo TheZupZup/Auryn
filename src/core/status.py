@@ -3,7 +3,7 @@
 STATUS_COLORS = {
     "ok":    "#87a556",
     "error": "#e74c3c",
-    "track": "#14B8A6",
+    "track": "#18C5AD",
     "info":  "#555555",
 }
 
