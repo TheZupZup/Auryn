@@ -11,8 +11,9 @@ name: Linux packages
 #
 # Versioning:
 #   - On a `v<X.Y.Z>` tag, the package version is `<X.Y.Z>`.
-#   - Otherwise we read APP_VERSION from src/Auryn.py.
-#   The resolved version is also baked into the installed Auryn.py so that
+#   - Otherwise we use BASE_VERSION from the canonical source, src/core/version.py.
+#   Both are resolved by `python3 src/core/version.py --build-version`.
+#   The resolved version is baked into the installed core/version.py so that
 #   `auryn --version` matches the package metadata.
 
 on:
@@ -35,13 +36,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: resolve
-        name: Resolve version from tag or APP_VERSION
+        name: Resolve version from tag or canonical source
+        # core.version reads GITHUB_REF/GITHUB_REF_NAME to detect a tag build
+        # and otherwise falls back to BASE_VERSION, so this single call covers
+        # tag, push and PR builds without duplicating the strip-"v" logic.
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          else
-            VERSION="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2)"
-          fi
+          VERSION="$(python3 src/core/version.py --build-version)"
           if [ -z "${VERSION}" ]; then
             echo "Could not resolve version" >&2
             exit 1
@@ -65,7 +65,7 @@ jobs:
             lintian
 
       - name: Sanity-check sources (py_compile)
-        run: python3 -m py_compile src/Auryn.py
+        run: python3 -m py_compile src/Auryn.py src/core/version.py
 
       - name: Build .deb
         run: packaging/debian/build-deb.sh "${{ needs.version.outputs.version }}"
@@ -89,18 +89,18 @@ jobs:
             echo "Expected Architecture: all, got: ${arch}" >&2
             exit 1
           fi
-          # The build script bakes APP_VERSION into the installed Auryn.py.
-          # Extract it from the package and confirm it matches the resolved version.
+          # The build script bakes _BAKED_VERSION into the installed
+          # core/version.py. Extract it and confirm it matches the resolved version.
           tmp="$(mktemp -d)"
           dpkg-deb -x "${pkg}" "${tmp}"
-          baked="$(grep -E '^APP_VERSION\s*=' "${tmp}/usr/share/auryn/Auryn.py" \
+          baked="$(grep -E '^_BAKED_VERSION\s*=' "${tmp}/usr/share/auryn/core/version.py" \
                    | head -n1 | cut -d'"' -f2)"
           want="${{ needs.version.outputs.version }}"
           if [ "${baked}" != "${want}" ]; then
-            echo "Baked APP_VERSION (${baked}) does not match package version (${want})" >&2
+            echo "Baked _BAKED_VERSION (${baked}) does not match package version (${want})" >&2
             exit 1
           fi
-          echo "OK: .deb Architecture=all, APP_VERSION=${baked}"
+          echo "OK: .deb Architecture=all, baked version=${baked}"
 
       - name: Lint .deb (informational)
         run: lintian --no-tag-display-limit dist/*.deb || true
@@ -128,7 +128,7 @@ jobs:
             rpmlint
 
       - name: Sanity-check sources (py_compile)
-        run: python3 -m py_compile src/Auryn.py
+        run: python3 -m py_compile src/Auryn.py src/core/version.py
 
       - name: Build .rpm
         run: packaging/rpm/build-rpm.sh "${{ needs.version.outputs.version }}"
@@ -152,19 +152,19 @@ jobs:
             echo "Expected ARCH: noarch, got: ${arch}" >&2
             exit 1
           fi
-          # Extract the bundled Auryn.py from the .rpm and confirm the
-          # baked APP_VERSION matches the resolved package version.
+          # Extract the bundled core/version.py from the .rpm and confirm the
+          # baked _BAKED_VERSION matches the resolved package version.
           tmp="$(mktemp -d)"
           ( cd "${tmp}" && rpm2cpio "${GITHUB_WORKSPACE}/${pkg}" \
               | cpio -idm --quiet )
-          baked="$(grep -E '^APP_VERSION\s*=' "${tmp}/usr/share/auryn/Auryn.py" \
+          baked="$(grep -E '^_BAKED_VERSION\s*=' "${tmp}/usr/share/auryn/core/version.py" \
                    | head -n1 | cut -d'"' -f2)"
           want="${{ needs.version.outputs.version }}"
           if [ "${baked}" != "${want}" ]; then
-            echo "Baked APP_VERSION (${baked}) does not match package version (${want})" >&2
+            echo "Baked _BAKED_VERSION (${baked}) does not match package version (${want})" >&2
             exit 1
           fi
-          echo "OK: .rpm ARCH=noarch, APP_VERSION=${baked}"
+          echo "OK: .rpm ARCH=noarch, baked version=${baked}"
 
       - name: Lint .rpm (informational)
         run: rpmlint dist/*.rpm || true

@@ -4,8 +4,8 @@
 # Usage:
 #   packaging/rpm/build-rpm.sh [VERSION]
 #
-# If VERSION is not provided, it is extracted from src/Auryn.py (APP_VERSION).
-# The resulting .rpm is written to dist/.
+# If VERSION is not provided, it is resolved from the canonical version source
+# (src/core/version.py). The resulting .rpm is written to dist/.
 
 set -euo pipefail
 
@@ -16,7 +16,7 @@ cd "${REPO_ROOT}"
 
 VERSION="${1:-}"
 if [ -z "${VERSION}" ]; then
-    VERSION="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2 || true)"
+    VERSION="$(python3 src/core/version.py --build-version 2>/dev/null || true)"
 fi
 VERSION="${VERSION:-0.0.0}"
 

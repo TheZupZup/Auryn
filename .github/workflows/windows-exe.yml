@@ -26,9 +26,11 @@ name: Windows packaging (experimental)
 #
 # Versioning mirrors the Linux workflow:
 #   - On a v<X.Y.Z> tag, the resolved version is <X.Y.Z>.
-#   - Otherwise we read APP_VERSION from src/Auryn.py.
-# That value is baked into the bundled Auryn.py so the produced artifact
-# reports the matching version.
+#   - Otherwise we use BASE_VERSION from the canonical source, src/core/version.py.
+# That value is baked into the bundled core/version.py so the produced artifact
+# reports the matching version. (This step runs in Git Bash before the MSYS2
+# Python is installed, so it resolves the source version with grep rather than
+# the core.version CLI used by the Linux workflow.)
 
 on:
   push:
@@ -65,7 +67,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2)"
+            VERSION="$(grep -E '^BASE_VERSION\s*=' src/core/version.py | head -n1 | cut -d'"' -f2)"
           fi
           if [ -z "${VERSION}" ]; then
             echo "Could not resolve version" >&2
@@ -177,18 +179,18 @@ jobs:
           done
 
       - name: Sanity-check sources (py_compile)
-        run: python -m py_compile src/Auryn.py
+        run: python -m py_compile src/Auryn.py src/core/version.py
 
-      - name: Bake APP_VERSION into src/Auryn.py
+      - name: Bake resolved version into src/core/version.py
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          sed -i -E "s|^APP_VERSION\s*=.*|APP_VERSION = \"${VERSION}\"|" src/Auryn.py
-          baked="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2)"
+          sed -i -E "s|^_BAKED_VERSION\s*=.*|_BAKED_VERSION = \"${VERSION}\"|" src/core/version.py
+          baked="$(grep -E '^_BAKED_VERSION\s*=' src/core/version.py | head -n1 | cut -d'"' -f2)"
           if [ "${baked}" != "${VERSION}" ]; then
-            echo "Bake failed: source reports APP_VERSION=${baked}, want=${VERSION}" >&2
+            echo "Bake failed: source reports _BAKED_VERSION=${baked}, want=${VERSION}" >&2
             exit 1
           fi
-          echo "OK: src/Auryn.py now reports APP_VERSION=${baked}"
+          echo "OK: src/core/version.py now reports _BAKED_VERSION=${baked}"
 
       - name: Build --onedir bundle with PyInstaller (experimental)
         id: build_onedir

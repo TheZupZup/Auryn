@@ -4,8 +4,8 @@
 # Usage:
 #   packaging/debian/build-deb.sh [VERSION]
 #
-# If VERSION is not provided, it is extracted from src/Auryn.py (APP_VERSION).
-# The resulting .deb is written to dist/.
+# If VERSION is not provided, it is resolved from the canonical version source
+# (src/core/version.py). The resulting .deb is written to dist/.
 
 set -euo pipefail
 
@@ -15,11 +15,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 # --- Resolve version -------------------------------------------------------
-# Priority: explicit arg > APP_VERSION in src/Auryn.py > fallback.
-# To bump the package version, update APP_VERSION in src/Auryn.py.
+# Priority: explicit arg > canonical source (core.version) > fallback.
+# To bump the package version, update BASE_VERSION in src/core/version.py.
+# core.version resolves a release tag from the environment when present, so on
+# a tag build this yields the release version even without an explicit arg.
 VERSION="${1:-}"
 if [ -z "${VERSION}" ]; then
-    VERSION="$(grep -E '^APP_VERSION\s*=' src/Auryn.py | head -n1 | cut -d'"' -f2 || true)"
+    VERSION="$(python3 src/core/version.py --build-version 2>/dev/null || true)"
 fi
 VERSION="${VERSION:-0.0.0}"
 
@@ -43,15 +45,17 @@ done
 
 # Python sources
 install -m 0644 src/Auryn.py "${PKG_ROOT}/usr/share/auryn/Auryn.py"
-# Bake the resolved version into the installed Auryn.py so that
-# `auryn --version` and the About dialog report the same version as the
-# package metadata (especially on tag builds where VERSION comes from the tag).
-sed -i -E "s|^APP_VERSION\s*=.*|APP_VERSION = \"${VERSION}\"|" \
-    "${PKG_ROOT}/usr/share/auryn/Auryn.py"
 install -m 0644 src/Auryn.ui "${PKG_ROOT}/usr/share/auryn/Auryn.ui"
 install -m 0644 src/core/__init__.py "${PKG_ROOT}/usr/share/auryn/core/__init__.py"
 install -m 0644 src/core/errors.py "${PKG_ROOT}/usr/share/auryn/core/errors.py"
 install -m 0644 src/core/status.py "${PKG_ROOT}/usr/share/auryn/core/status.py"
+install -m 0644 src/core/version.py "${PKG_ROOT}/usr/share/auryn/core/version.py"
+# Bake the resolved version into the installed core/version.py so that
+# `auryn --version`, the About dialog and the window title all report the same
+# version as the package metadata (especially on tag builds where VERSION
+# comes from the release tag and no GitHub env vars exist at runtime).
+sed -i -E "s|^_BAKED_VERSION\s*=.*|_BAKED_VERSION = \"${VERSION}\"|" \
+    "${PKG_ROOT}/usr/share/auryn/core/version.py"
 
 # Desktop entry (already present in repo)
 install -m 0644 desktop/Auryn.desktop "${PKG_ROOT}/usr/share/applications/Auryn.desktop"

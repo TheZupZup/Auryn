@@ -1,11 +1,12 @@
 # RPM spec for Auryn — GTK GUI for streamrip.
 #
-# The package version defaults to APP_VERSION in src/Auryn.py and can be
-# overridden at build time:
-#   rpmbuild -bb --define "auryn_version 0.1.1" --define "_sourcedir $PWD" packaging/rpm/auryn.spec
+# The package version is supplied via --define "auryn_version X.Y.Z" (the
+# build-rpm.sh wrapper resolves it from the canonical source, src/core/version.py,
+# or from a release tag). Example:
+#   rpmbuild -bb --define "auryn_version 0.2.10" --define "_sourcedir $PWD" packaging/rpm/auryn.spec
 #
-# To bump the package version, update APP_VERSION in src/Auryn.py (or pass
-# --define "auryn_version X.Y.Z" on the command line / via the workflow).
+# To bump the package version, update BASE_VERSION in src/core/version.py (or
+# pass --define "auryn_version X.Y.Z" on the command line / via the workflow).
 
 %{!?auryn_version: %define auryn_version 0.0.0}
 
@@ -57,14 +58,16 @@ done
 
 # Python sources
 install -m 0644 %{_sourcedir}/src/Auryn.py        %{buildroot}%{_datadir}/auryn/Auryn.py
-# Bake the resolved version into the installed Auryn.py so that
-# `auryn --version` and the About dialog match the package metadata.
-sed -i -E "s|^APP_VERSION\s*=.*|APP_VERSION = \"%{auryn_version}\"|" \
-    %{buildroot}%{_datadir}/auryn/Auryn.py
 install -m 0644 %{_sourcedir}/src/Auryn.ui        %{buildroot}%{_datadir}/auryn/Auryn.ui
 install -m 0644 %{_sourcedir}/src/core/__init__.py %{buildroot}%{_datadir}/auryn/core/__init__.py
 install -m 0644 %{_sourcedir}/src/core/errors.py  %{buildroot}%{_datadir}/auryn/core/errors.py
 install -m 0644 %{_sourcedir}/src/core/status.py  %{buildroot}%{_datadir}/auryn/core/status.py
+install -m 0644 %{_sourcedir}/src/core/version.py %{buildroot}%{_datadir}/auryn/core/version.py
+# Bake the resolved version into the installed core/version.py so that
+# `auryn --version`, the About dialog and the window title match the package
+# metadata (no GitHub env vars exist on the user's machine at runtime).
+sed -i -E "s|^_BAKED_VERSION\s*=.*|_BAKED_VERSION = \"%{auryn_version}\"|" \
+    %{buildroot}%{_datadir}/auryn/core/version.py
 
 # Desktop entry
 install -m 0644 %{_sourcedir}/desktop/Auryn.desktop \
@@ -96,6 +99,7 @@ ln -s Auryn %{buildroot}%{_bindir}/auryn
 %{_datadir}/auryn/core/__init__.py
 %{_datadir}/auryn/core/errors.py
 %{_datadir}/auryn/core/status.py
+%{_datadir}/auryn/core/version.py
 %{_datadir}/applications/Auryn.desktop
 %{_datadir}/icons/hicolor/scalable/apps/Auryn.svg
 %{_datadir}/icons/hicolor/16x16/apps/Auryn.png
