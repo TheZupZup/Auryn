@@ -19,50 +19,60 @@ streamrip for the current user via `pip install --user streamrip`
 
 ## Single source of truth for the version
 
-The application version is defined **once**, in `src/Auryn.py`:
+The project version lives in **one** place, `src/core/version.py`:
 
 ```python
-APP_VERSION = "0.1.1"
+BASE_VERSION = "0.2.10"
 ```
 
-Everything else derives from it:
+Everything else derives from three small, tested helpers in that module:
 
-- `auryn --version` prints `Auryn <APP_VERSION>`
-- The About dialog uses `APP_VERSION`
-- `packaging/debian/build-deb.sh` and `packaging/rpm/build-rpm.sh` read
-  `APP_VERSION` when no version argument is passed
-- CI passes the resolved version (see below) to the build scripts, which
-  then **bake** that value into the installed `Auryn.py` so the running
-  app and the package metadata always match
+- `get_app_version()` — the string shown in the UI, About dialog and
+  `auryn --version` / `--doctor`. Release builds report the bare tag
+  version (e.g. `0.2.10`); local/PR builds report `<BASE_VERSION>-dev`
+  (e.g. `0.2.10-dev`) so a non-release build is obvious.
+- `get_build_version()` — the bare version used for package metadata and
+  artifact names. Never carries the `-dev` suffix and is always valid for
+  Debian / RPM / Windows.
+- `normalize_release_tag()` — turns a tag like `v0.1.4` into `0.1.4`
+  (and rejects junk, falling back to a safe default).
 
-You should never need to edit a version string in more than one place.
+`src/Auryn.py` sets `APP_VERSION = get_app_version()`; the window title,
+header badge and footer are stamped at runtime, so no version string is
+ever hardcoded in `Auryn.py` or `Auryn.ui`.
+
+You should never need to edit a version string in more than one place:
+bump `BASE_VERSION`, or just push a tag.
 
 ## How CI resolves the version
 
-The `version` job in `linux-packages.yml`:
+The `version` job in `linux-packages.yml` runs
+`python3 src/core/version.py --build-version`, which:
 
-- On a tag push matching `v*` (e.g. `v2.0.0`) → version is `2.0.0`
-- On any other push / PR → version is the current `APP_VERSION` from
-  `src/Auryn.py`
+- On a tag push matching `v*` (e.g. `v2.0.0`) → resolves to `2.0.0`
+  (via `GITHUB_REF` / `GITHUB_REF_NAME`)
+- On any other push / PR → resolves to `BASE_VERSION`
 
-That value is then passed to both `build-deb.sh` and `build-rpm.sh`,
-which:
+That value is passed to both `build-deb.sh` and `build-rpm.sh`, which:
 
 1. Use it as the package `Version:` field, and
-2. Rewrite `APP_VERSION` in the bundled `usr/share/auryn/Auryn.py`
-   before packaging.
+2. **Bake** it into `_BAKED_VERSION` in the bundled
+   `usr/share/auryn/core/version.py` before packaging — so the installed
+   app reports the release version at runtime even though no GitHub
+   environment variables exist on the user's machine.
 
 So a `v2.0.0` tag build produces `auryn_2.0.0_all.deb` /
 `auryn-2.0.0-1.noarch.rpm`, and `auryn --version` from those packages
-prints `Auryn 2.0.0` — even if `APP_VERSION` in `main` still says
-`0.1.1` at the time of the tag.
+prints `Auryn 2.0.0` — even if `BASE_VERSION` in `main` still says
+`0.2.10` at the time of the tag. The Windows workflow mirrors this and
+bakes the same `_BAKED_VERSION`.
 
 ## Release flow
 
 1. Decide the release version, e.g. `2.0.0`.
-2. (Optional but recommended) Bump `APP_VERSION` in `src/Auryn.py`,
-   commit, and push to `main`. This keeps the dev branch's
-   `--version` honest.
+2. (Optional but recommended) Bump `BASE_VERSION` in
+   `src/core/version.py`, commit, and push to `main`. This keeps the dev
+   branch's `--version` honest (it will read `2.0.0-dev`).
 3. Tag the commit and push the tag:
 
    ```sh
@@ -86,10 +96,10 @@ prints `Auryn 2.0.0` — even if `APP_VERSION` in `main` still says
 ## Local builds
 
 You don't need a tag to build locally — the scripts work on any
-checkout:
+checkout and resolve the version from `src/core/version.py`:
 
 ```sh
-packaging/debian/build-deb.sh            # uses APP_VERSION from src/Auryn.py
+packaging/debian/build-deb.sh            # uses BASE_VERSION from core.version
 packaging/debian/build-deb.sh 2.0.0-dev  # explicit override
 
 packaging/rpm/build-rpm.sh

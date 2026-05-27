@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Auryn v0.1.1 — GUI wrapper for streamrip
+Auryn — GUI wrapper for streamrip
 © 2025 TheZupZup — GNU GPL v3
 UI chargée depuis Auryn.ui (Glade)
 """
@@ -34,9 +34,13 @@ from core import deezer
 from core import library
 from core import quality as qual
 from core import streamrip_exec
+from core import version as _version
 
 APP_NAME = "Auryn"
-APP_VERSION = "0.1.1"
+# Resolved from the single source of truth in core.version: the canonical
+# BASE_VERSION for dev builds (shown as "<base>-dev"), or the GitHub release
+# tag for tagged/packaged builds. Never edit a version string here.
+APP_VERSION = _version.get_app_version()
 
 SYSTEM_NAME = platform.system()
 IS_WINDOWS = SYSTEM_NAME == "Windows"
@@ -393,6 +397,7 @@ def run_doctor(verbose=False):
     whether the bundled streamrip was found, the streamrip config path and
     whether Deezer is configured — all without ever exposing the ARL.
     """
+    print(f"INFO  {APP_NAME} version: {APP_VERSION}")
     rip_search_paths = [
         os.path.expanduser("~/.local/bin/rip"),
         "/usr/local/bin/rip",
@@ -534,6 +539,11 @@ class AurynApp:
         self.btn_clear_queue     = self.builder.get_object("btn_clear_queue")
         self.queue_listbox       = self.builder.get_object("queue_listbox")
         self.queue_empty_label   = self.builder.get_object("queue_empty_label")
+
+        # Stamp the resolved version onto the title, header badge and footer.
+        # The .ui ships version-neutral placeholders; core.version is the single
+        # source of truth, so these are filled in at runtime.
+        self._apply_version_labels()
 
         # ── Checkbuttons qualité ──
         self._quality_checks = [
@@ -4494,6 +4504,26 @@ class AurynApp:
         except Exception:
             pass
 
+    def _apply_version_labels(self):
+        """Fill the title, header badge and footer with the resolved version.
+
+        APP_VERSION (from core.version) is the single source of truth, so every
+        surface is stamped here rather than hardcoded in the .ui file. Version
+        strings only ever contain [0-9A-Za-z.-], so embedding them in Pango
+        markup needs no escaping.
+        """
+        ver = APP_VERSION
+        if self.window is not None:
+            self.window.set_title(f"{APP_NAME} v{ver}")
+        version_lbl = self.builder.get_object("version_label")
+        if version_lbl is not None:
+            version_lbl.set_markup(
+                f'<span foreground="#555555" size="small">v{ver}</span>')
+        if self.footer_lbl is not None:
+            self.footer_lbl.set_markup(
+                f'<span foreground="#444444" size="small">  {APP_NAME} '
+                f'v{ver}  ·  streamrip GUI</span>')
+
     def _show_about(self, *_):
         dlg = Gtk.AboutDialog()
         dlg.set_transient_for(self.window)
@@ -4519,7 +4549,7 @@ class AurynApp:
             q_track = urllib.parse.quote(track)
             url = f"https://lrclib.net/api/get?artist_name={q_artist}&track_name={q_track}"
             
-            req = urllib.request.Request(url, headers={"User-Agent": "Auryn/0.1.1 (GTK3)"})
+            req = urllib.request.Request(url, headers={"User-Agent": f"Auryn/{APP_VERSION} (GTK3)"})
             with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode())
                 
