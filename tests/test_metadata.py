@@ -161,3 +161,53 @@ def test_qobuz_handles_none_and_non_dict_input():
         assert f["quality"] == ""
         assert f["cover_url"] == ""
         assert f["cover_fallback"] == ""
+
+
+# ── Track lists for the structured progress view ──────────────────────────
+
+def test_deezer_album_tracks_normalises_titles_and_order():
+    data = {
+        "tracks": {"data": [
+            {"title": "One More Time", "track_position": 1,
+             "artist": {"name": "Daft Punk"}},
+            {"title": "Aerodynamic", "track_position": 2,
+             "artist": {"name": "Daft Punk"}},
+        ]}
+    }
+    tracks = metadata.deezer_album_tracks(data)
+    assert [t["title"] for t in tracks] == ["One More Time", "Aerodynamic"]
+    assert [t["number"] for t in tracks] == [1, 2]
+    assert tracks[0]["artist"] == "Daft Punk"
+
+
+def test_deezer_album_tracks_falls_back_to_index_and_skips_empty():
+    data = {"tracks": {"data": [
+        {"title": "Has Title"},
+        {"title": "", "artist": None},   # skipped (no title)
+        {"artist": {"name": "X"}},        # skipped (no title)
+    ]}}
+    tracks = metadata.deezer_album_tracks(data)
+    assert len(tracks) == 1
+    assert tracks[0]["number"] == 1
+    assert tracks[0]["artist"] == ""
+
+
+def test_qobuz_album_tracks_uses_performer_then_album_artist():
+    data = {
+        "artist": {"name": "Air"},
+        "tracks": {"items": [
+            {"title": "La Femme d'Argent", "track_number": 1,
+             "performer": {"name": "Air feat. X"}},
+            {"title": "Sexy Boy", "track_number": 2},  # no performer
+        ]},
+    }
+    tracks = metadata.qobuz_album_tracks(data)
+    assert tracks[0]["artist"] == "Air feat. X"
+    assert tracks[1]["artist"] == "Air"        # album-artist fallback
+    assert [t["number"] for t in tracks] == [1, 2]
+
+
+def test_track_lists_tolerate_none_and_bad_shapes():
+    for bad in (None, [], "oops", 42, {"tracks": None}, {"tracks": "x"}):
+        assert metadata.deezer_album_tracks(bad) == []
+        assert metadata.qobuz_album_tracks(bad) == []

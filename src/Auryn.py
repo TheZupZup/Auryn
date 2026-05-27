@@ -28,6 +28,7 @@ from core import tidal_auth
 from core import metadata
 from core import streamrip_status
 from core import log_format
+from core import download_session as dsession
 from core import deezer
 from core import library
 from core import quality as qual
@@ -125,6 +126,18 @@ progressbar progress { background-image: none; background-color: #14B8A6; border
 separator { background-color: #242424; min-width: 1px; min-height: 1px; }
 .history-row { background-color: #101010; border: 1px solid #1f1f1f; border-radius: 7px; padding: 2px; }
 .history-row:hover { border-color: #333; background-color: #141414; }
+
+/* -- Structured download progress view -- */
+#progress_summary { padding: 2px 2px 4px 2px; }
+.progress-head { padding: 2px 12px 6px 12px; }
+.progress-head label { color: #666666; }
+.progress-row { background-color: #101010; border: 1px solid #1f1f1f; border-radius: 7px; padding: 2px; }
+.progress-row:hover { border-color: #2c2c2c; background-color: #141414; }
+.track-bar trough { background-color: #0c0c0c; border: 1px solid #242424; border-radius: 3px; min-height: 5px; }
+.track-bar progress { background-image: none; background-color: #14B8A6; border-radius: 3px; min-height: 5px; }
+.track-bar.bar-done progress { background-color: #87a556; }
+.track-bar.bar-error progress { background-color: #e74c3c; }
+.track-bar.bar-skip progress { background-color: #5a5a5a; }
 """
 
 # Sourced from core.quality so the picker, the clamping rules and the log
@@ -505,6 +518,12 @@ class AurynApp:
         self._album_meta            = None
         self._active_is_playlist    = False
         self._active_quality        = None
+        # Structured per-track progress view (purely observational; never
+        # touches the streamrip download pipeline). The raw log lives on its
+        # own tab and stays the source of truth for debugging.
+        self._dl_session            = None
+        self._progress_rows         = []
+        self._progress_pulse_timer  = None
 
         # ── Forcer can-focus sur les widgets interactifs ──
         self.url_entry.set_can_focus(True)
@@ -571,8 +590,12 @@ class AurynApp:
         # ── Restaurer les préférences enregistrées ──
         self._apply_saved_preferences()
 
+        # ── Vue de progression structurée (onglet par défaut) ──
+        self._build_progress_tab()
+
         # ── Afficher ──
         self.window.show_all()
+        self._progress_reset()
         self.btn_stop.hide()
         self._is_first_launch = is_first_launch()
         if self._is_first_launch:
@@ -1059,6 +1082,10 @@ class AurynApp:
         self._active_is_playlist  = url_is_playlist(url)
         self._active_quality      = None
         self._reset_streamrip_signals()
+        self._dl_session          = dsession.DownloadSession()
+        self._progress_reset()
+        self._progress_refresh_summary()
+        self.notebook.set_current_page(0)
         self._set_status("⏳  Fetching album info...", "info")
         self._set_lyrics('<span foreground="#555555"><i>Lyrics appear here once a track is identified.</i></span>')
         quality = self._get_quality()
@@ -1086,11 +1113,15 @@ class AurynApp:
             data = fetch_qobuz_meta(item_id)
             if data and not data.get("status") == "error":
                 GLib.idle_add(self._apply_qobuz_meta, data)
+                GLib.idle_add(self._progress_init_tracks,
+                              metadata.qobuz_album_tracks(data))
         elif service == "deezer" and item_id:
             GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_deezer_album(item_id)
             if data and not data.get("error"):
                 GLib.idle_add(self._apply_deezer_meta, data)
+                GLib.idle_add(self._progress_init_tracks,
+                              metadata.deezer_album_tracks(data))
         elif service == "deezer_track" and item_id:
             GLib.idle_add(self._set_status, "⏳  Fetching metadata...", "info")
             data = fetch_deezer_track_album(item_id)
@@ -1190,6 +1221,10 @@ class AurynApp:
         self._log("\n" + status_msg + "\n", "error")
         for line in (log_lines or []):
             self._log(f"   {line}\n", "info")
+        self._progress_stop_pulse()
+        self._progress_set_summary(
+            '<span foreground="#e74c3c" size="small" weight="bold">'
+            '❌  Could not start — see Raw Log.</span>')
         self._history_set_status(self._current_history_entry, "Failed")
         self._queue_set_status(self._current_queue_item, "Failed")
         self._current_history_entry = None
@@ -2035,6 +2070,11 @@ class AurynApp:
         # collapsed traceback still counts toward the final outcome.
         self._track_streamrip_signals(line)
 
+        # Mirror the same line into the structured per-track view. Done here
+        # (before noise suppression) so it observes exactly what the outcome
+        # tally does; it never alters the line or the download itself.
+        self._feed_progress(line)
+
         # TIDAL token_expiry crash: streamrip raises ValueError on
         # float(token_expiry) when it is empty/corrupt. Scoped to a TIDAL
         # download exactly like the auth-error detection below.
@@ -2169,6 +2209,382 @@ class AurynApp:
             ]:
                 m = re.search(pat, line, re.I)
                 if m: sm("Album Quality", m.group(1)); break
+
+    # ── Vue de progression structurée ──────────────────────────────────────
+    #
+    # A clean, scannable per-track view that supplements the raw log. It is
+    # initialised from the album/playlist metadata Auryn already resolves
+    # (real song titles, in order) and otherwise discovers tracks by safely
+    # parsing streamrip output. It is OBSERVATIONAL ONLY: it reads the same
+    # lines the log pump emits and never alters the download pipeline, the
+    # queue/history, or the protected metadata sidebar. The model lives in
+    # the GTK-free core.download_session so its logic is unit-tested.
+
+    # Column widths (px) shared by the header and every track row so the list
+    # lines up like a table without a heavyweight GtkTreeView.
+    _PROG_W_NUM = 28
+    _PROG_W_STATUS = 104
+    _PROG_W_PROGRESS = 132
+
+    _PROG_STATUS_COLORS = {
+        dsession.QUEUED:      "#888888",
+        dsession.DOWNLOADING: "#14B8A6",
+        dsession.COMPLETE:    "#87a556",
+        dsession.SKIPPED:     "#e0a83b",
+        dsession.ERROR:       "#e74c3c",
+    }
+
+    @staticmethod
+    def _prog_escape(text):
+        return (str(text)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;"))
+
+    def _build_progress_tab(self):
+        """Create the structured progress tab and make it the default page."""
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_name("log_scroll")
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+
+        container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        container.set_margin_start(8)
+        container.set_margin_end(8)
+        container.set_margin_top(8)
+        container.set_margin_bottom(8)
+
+        self.progress_summary_lbl = Gtk.Label()
+        self.progress_summary_lbl.set_name("progress_summary")
+        self.progress_summary_lbl.set_halign(Gtk.Align.START)
+        self.progress_summary_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        container.pack_start(self.progress_summary_lbl, False, False, 0)
+
+        self.progress_header = self._progress_build_header()
+        container.pack_start(self.progress_header, False, False, 0)
+
+        self.progress_empty_label = Gtk.Label()
+        self.progress_empty_label.set_halign(Gtk.Align.CENTER)
+        self.progress_empty_label.set_valign(Gtk.Align.CENTER)
+        self.progress_empty_label.set_margin_top(24)
+        self.progress_empty_label.set_margin_bottom(24)
+        self.progress_empty_label.set_markup(
+            '<span foreground="#555555" size="small"><i>Track progress will '
+            'appear here when a download starts.</i></span>')
+        container.pack_start(self.progress_empty_label, False, False, 0)
+
+        self.progress_listbox = Gtk.ListBox()
+        self.progress_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.progress_listbox.set_can_focus(False)
+        container.pack_start(self.progress_listbox, True, True, 0)
+
+        scroll.add(container)
+
+        tab_label = Gtk.Label(label="Progress")
+        self.notebook.insert_page(scroll, tab_label, 0)
+        self.notebook.show_all()
+        self.notebook.set_current_page(0)
+
+    def _progress_build_header(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.get_style_context().add_class("progress-head")
+
+        def head(text, width=None, expand=False):
+            lbl = Gtk.Label()
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_markup(
+                f'<span size="x-small" letter_spacing="200">{text}</span>')
+            if width:
+                lbl.set_size_request(width, -1)
+            box.pack_start(lbl, expand, True, 0)
+
+        head("#", self._PROG_W_NUM)
+        head("TITLE", expand=True)
+        head("STATUS", self._PROG_W_STATUS)
+        head("PROGRESS", self._PROG_W_PROGRESS)
+        return box
+
+    def _progress_build_row(self, track):
+        row = Gtk.ListBoxRow()
+        row.set_can_focus(False)
+        row.get_style_context().add_class("progress-row")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+
+        num_lbl = Gtk.Label()
+        num_lbl.set_halign(Gtk.Align.START)
+        num_lbl.set_valign(Gtk.Align.CENTER)
+        num_lbl.set_size_request(self._PROG_W_NUM, -1)
+        box.pack_start(num_lbl, False, False, 0)
+
+        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+        title_box.set_hexpand(True)
+        title_box.set_valign(Gtk.Align.CENTER)
+        title_lbl = Gtk.Label()
+        title_lbl.set_halign(Gtk.Align.START)
+        title_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        title_lbl.set_max_width_chars(40)
+        title_box.pack_start(title_lbl, False, False, 0)
+        artist_lbl = Gtk.Label()
+        artist_lbl.set_halign(Gtk.Align.START)
+        artist_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        artist_lbl.set_max_width_chars(40)
+        title_box.pack_start(artist_lbl, False, False, 0)
+        box.pack_start(title_box, True, True, 0)
+
+        status_lbl = Gtk.Label()
+        status_lbl.set_halign(Gtk.Align.START)
+        status_lbl.set_valign(Gtk.Align.CENTER)
+        status_lbl.set_size_request(self._PROG_W_STATUS, -1)
+        box.pack_start(status_lbl, False, False, 0)
+
+        prog_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        prog_box.set_valign(Gtk.Align.CENTER)
+        prog_box.set_size_request(self._PROG_W_PROGRESS, -1)
+        bar = Gtk.ProgressBar()
+        bar.get_style_context().add_class("track-bar")
+        bar.set_valign(Gtk.Align.CENTER)
+        bar.set_hexpand(True)
+        prog_box.pack_start(bar, False, False, 0)
+        detail_lbl = Gtk.Label()
+        detail_lbl.set_halign(Gtk.Align.START)
+        detail_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        detail_lbl.set_max_width_chars(22)
+        prog_box.pack_start(detail_lbl, False, False, 0)
+        box.pack_start(prog_box, False, False, 0)
+
+        row.add(box)
+        return {
+            "row": row, "num": num_lbl, "title": title_lbl,
+            "artist": artist_lbl, "status": status_lbl,
+            "bar": bar, "detail": detail_lbl,
+        }
+
+    def _progress_reset(self):
+        """Clear the structured view back to its empty state."""
+        self._progress_stop_pulse()
+        if getattr(self, "progress_listbox", None) is not None:
+            for child in self.progress_listbox.get_children():
+                self.progress_listbox.remove(child)
+        self._progress_rows = []
+        if getattr(self, "progress_empty_label", None) is not None:
+            self.progress_empty_label.show()
+        if getattr(self, "progress_header", None) is not None:
+            self.progress_header.hide()
+        self._progress_set_summary(
+            '<span foreground="#777777" size="small">Ready — paste a URL to '
+            'begin.</span>')
+
+    def _progress_set_summary(self, markup):
+        lbl = getattr(self, "progress_summary_lbl", None)
+        if lbl is None:
+            return
+        try:
+            lbl.set_markup(markup)
+        except Exception:
+            pass
+
+    def _progress_ensure_rows(self):
+        """Append widget rows until there is one per session track."""
+        if self._dl_session is None:
+            return
+        added = False
+        while len(self._progress_rows) < len(self._dl_session.tracks):
+            track = self._dl_session.tracks[len(self._progress_rows)]
+            refs = self._progress_build_row(track)
+            self._progress_rows.append(refs)
+            self.progress_listbox.add(refs["row"])
+            added = True
+        if self._dl_session.tracks:
+            self.progress_empty_label.hide()
+            self.progress_header.show()
+        if added:
+            self.progress_listbox.show_all()
+
+    def _progress_render_row(self, i):
+        if i < 0 or i >= len(self._progress_rows):
+            return
+        if self._dl_session is None or i >= len(self._dl_session.tracks):
+            return
+        track = self._dl_session.tracks[i]
+        refs = self._progress_rows[i]
+
+        refs["num"].set_markup(
+            f'<span foreground="#555555" size="small">'
+            f'{self._prog_escape(track.number)}</span>')
+
+        title = track.title or "Unknown title"
+        refs["title"].set_markup(
+            f'<span foreground="#e8e8e8" size="small">'
+            f'{self._prog_escape(title)}</span>')
+        if track.artist:
+            refs["artist"].set_markup(
+                f'<span foreground="#666666" size="x-small">'
+                f'{self._prog_escape(track.artist)}</span>')
+            refs["artist"].show()
+        else:
+            refs["artist"].hide()
+
+        color = self._PROG_STATUS_COLORS.get(track.status, "#888888")
+        refs["status"].set_markup(
+            f'<span foreground="{color}" size="small" weight="bold">'
+            f'● {track.status}</span>')
+
+        self._progress_style_bar(refs["bar"], track)
+        refs["detail"].set_markup(self._progress_detail_markup(track))
+
+    def _progress_style_bar(self, bar, track):
+        ctx = bar.get_style_context()
+        for cls in ("bar-done", "bar-error", "bar-skip"):
+            ctx.remove_class(cls)
+        status = track.status
+        if status == dsession.COMPLETE:
+            ctx.add_class("bar-done")
+            bar.set_fraction(1.0)
+        elif status == dsession.ERROR:
+            ctx.add_class("bar-error")
+            bar.set_fraction(1.0)
+        elif status == dsession.SKIPPED:
+            ctx.add_class("bar-skip")
+            bar.set_fraction(1.0)
+        elif status == dsession.DOWNLOADING:
+            bar.pulse()  # the pulse timer keeps it animating
+        else:  # QUEUED
+            bar.set_fraction(0.0)
+
+    def _progress_detail_markup(self, track):
+        if track.status == dsession.DOWNLOADING:
+            txt = track.speed or "downloading…"
+            color = "#14B8A6"
+        elif track.status == dsession.COMPLETE:
+            txt = self._progress_format_elapsed(track.elapsed) or "done"
+            color = "#6f8f48"
+        elif track.status == dsession.SKIPPED:
+            txt = "skipped"
+            color = "#9a7b2e"
+        elif track.status == dsession.ERROR:
+            txt = track.detail or "error"
+            color = "#b3493d"
+        else:
+            txt = "queued"
+            color = "#555555"
+        return (f'<span foreground="{color}" size="x-small">'
+                f'{self._prog_escape(txt)}</span>')
+
+    @staticmethod
+    def _progress_format_elapsed(seconds):
+        if seconds is None:
+            return ""
+        seconds = int(round(seconds))
+        if seconds < 60:
+            return f"{seconds}s"
+        minutes, secs = divmod(seconds, 60)
+        return f"{minutes}m{secs:02d}s"
+
+    def _feed_progress(self, line):
+        """Forward one log line to the structured model and refresh rows."""
+        if self._dl_session is None:
+            return
+        changed = self._dl_session.feed_line(line)
+        self._progress_ensure_rows()
+        for i in changed:
+            self._progress_render_row(i)
+        self._progress_refresh_summary()
+        if self._dl_session.counts()["downloading"] > 0:
+            self._progress_start_pulse()
+
+    def _progress_init_tracks(self, tracks):
+        """Seed the structured view from resolved album/playlist metadata."""
+        if self._dl_session is None or not tracks:
+            return False
+        self._dl_session.init_from_metadata(tracks)
+        for child in self.progress_listbox.get_children():
+            self.progress_listbox.remove(child)
+        self._progress_rows = []
+        self._progress_ensure_rows()
+        for i in range(len(self._dl_session.tracks)):
+            self._progress_render_row(i)
+        self._progress_refresh_summary()
+        return False
+
+    def _progress_refresh_summary(self, final_outcome=None):
+        if self._dl_session is None:
+            return
+        c = self._dl_session.counts()
+        total = c["total"]
+        done = c["complete"]
+        if final_outcome == streamrip_status.SUCCESS:
+            plural = "s" if total != 1 else ""
+            markup = (f'<span foreground="#87a556" size="small" weight="bold">'
+                      f'✅  All {total} track{plural} downloaded.</span>')
+        elif final_outcome == streamrip_status.PARTIAL:
+            parts = [f"{done}/{total} complete"]
+            if c["skipped"]:
+                parts.append(f'{c["skipped"]} skipped')
+            errs = c["errors"] or c["error_signals"]
+            if errs:
+                parts.append(f'{errs} error{"s" if errs != 1 else ""}')
+            markup = (f'<span foreground="#e0a83b" size="small" weight="bold">'
+                      f'⚠  {self._prog_escape(" · ".join(parts))}'
+                      f' — details in Raw Log.</span>')
+        elif final_outcome == streamrip_status.INVALID_URL:
+            markup = ('<span foreground="#e74c3c" size="small" weight="bold">'
+                      '❌  URL rejected by streamrip — see Raw Log.'
+                      '</span>')
+        elif final_outcome == streamrip_status.FAILED:
+            markup = ('<span foreground="#e74c3c" size="small" weight="bold">'
+                      '❌  Download failed — see Raw Log.</span>')
+        elif total > 0:
+            markup = (f'<span foreground="#14B8A6" size="small">'
+                      f'Downloading… {done}/{total} complete.</span>')
+        else:
+            markup = ('<span foreground="#777777" size="small">'
+                      'Preparing download…</span>')
+        self._progress_set_summary(markup)
+
+    def _progress_finalize(self, outcome):
+        if self._dl_session is None:
+            return
+        self._dl_session.finalize(outcome)
+        self._progress_ensure_rows()
+        for i in range(len(self._progress_rows)):
+            self._progress_render_row(i)
+        self._progress_refresh_summary(final_outcome=outcome)
+        self._progress_stop_pulse()
+
+    def _progress_start_pulse(self):
+        if self._progress_pulse_timer is not None:
+            return
+        self._progress_pulse_timer = GLib.timeout_add(
+            140, self._progress_pulse_tick)
+
+    def _progress_pulse_tick(self):
+        if self._dl_session is None:
+            self._progress_pulse_timer = None
+            return False
+        any_active = False
+        for i, track in enumerate(self._dl_session.tracks):
+            if (track.status == dsession.DOWNLOADING
+                    and i < len(self._progress_rows)):
+                self._progress_rows[i]["bar"].pulse()
+                any_active = True
+        if not any_active:
+            self._progress_pulse_timer = None
+            return False
+        return True
+
+    def _progress_stop_pulse(self):
+        if self._progress_pulse_timer is not None:
+            try:
+                GLib.source_remove(self._progress_pulse_timer)
+            except Exception:
+                pass
+            self._progress_pulse_timer = None
 
     # ── Fin ───────────────────────────────────────────────────────────────────
 
@@ -2551,16 +2967,29 @@ class AurynApp:
                         and self._process.returncode == -15)
         if user_stopped:
             self._finish_failed()
+            final_outcome = streamrip_status.FAILED
         else:
-            outcome = self._compute_download_outcome(success)
-            if outcome == streamrip_status.SUCCESS:
+            final_outcome = self._compute_download_outcome(success)
+            # Honour the structured model: never claim a clean finish if it
+            # observed errors/skips (defensive — both read the same signals).
+            if (final_outcome == streamrip_status.SUCCESS
+                    and self._dl_session is not None
+                    and self._dl_session.has_problems()):
+                final_outcome = streamrip_status.PARTIAL
+            if final_outcome == streamrip_status.SUCCESS:
                 self._finish_full_success()
-            elif outcome == streamrip_status.PARTIAL:
+            elif final_outcome == streamrip_status.PARTIAL:
                 self._finish_with_warnings()
-            elif outcome == streamrip_status.INVALID_URL:
+            elif final_outcome == streamrip_status.INVALID_URL:
                 self._finish_invalid_url()
             else:
                 self._finish_failed()
+
+        self._progress_finalize(final_outcome)
+        if user_stopped:
+            self._progress_set_summary(
+                '<span foreground="#e0a83b" size="small" weight="bold">'
+                '⏹  Download stopped.</span>')
 
         self._post_download_config_audit()
         tidal_corrupted = (
@@ -2849,6 +3278,10 @@ class AurynApp:
         self._log(
             "\n🔐  TIDAL download skipped: saved auth is corrupt/incomplete.\n",
             "error")
+        self._progress_stop_pulse()
+        self._progress_set_summary(
+            '<span foreground="#e74c3c" size="small" weight="bold">'
+            '🔐  TIDAL auth needs repair — see Raw Log.</span>')
         self._history_set_status(self._current_history_entry, "Failed")
         self._queue_set_status(self._current_queue_item, "Failed")
         self._current_history_entry = None
