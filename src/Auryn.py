@@ -59,7 +59,8 @@ def _import_gtk():
 
 
 CSS = b"""
-/* Auryn dark theme -- black canvas, orange (#14B8A6) accent. */
+/* Auryn dark theme -- black canvas, teal (#14B8A6) accent.
+   Text on the bright teal accent is dark charcoal (#0a0a0a) for strong contrast. */
 * { font-family: 'Inter', 'Ubuntu', 'Cantarell', sans-serif; }
 window { background-color: #161616; color: #e8e8e8; }
 
@@ -80,20 +81,20 @@ window { background-color: #161616; color: #e8e8e8; }
 #quality_box { background-color: #121212; border: 1px solid #242424; border-radius: 9px; padding: 5px 6px; }
 #quality_box button { background-image: none; background-color: transparent; box-shadow: none; color: #b2b2b2; font-size: 12px; padding: 5px 13px; border-radius: 6px; border: 1px solid transparent; transition: all 120ms ease; }
 #quality_box button:hover { color: #ffffff; background-color: #1e1e1e; }
-#quality_box button:checked { background-image: none; box-shadow: none; background-color: #14B8A6; color: #ffffff; font-weight: bold; }
-#quality_box button:checked label { color: #ffffff; }
+#quality_box button:checked { background-image: none; box-shadow: none; background-color: #14B8A6; color: #0a0a0a; font-weight: bold; }
+#quality_box button:checked label { color: #0a0a0a; }
 
 /* -- Plain checkboxes (cache / organise / playlists toggles) -- */
 checkbutton { color: #a8a8a8; font-size: 12px; }
 checkbutton check { background-image: none; background-color: #0c0c0c; border: 1px solid #444; border-radius: 4px; min-width: 15px; min-height: 15px; margin-right: 5px; transition: all 120ms ease; }
-checkbutton:checked check { background-image: none; background-color: #14B8A6; border-color: #14B8A6; }
+checkbutton:checked check { background-image: none; background-color: #14B8A6; border-color: #14B8A6; color: #0a0a0a; }
 checkbutton label:hover { color: #14B8A6; }
 
 /* -- Buttons: secondary / primary / accent / destructive -- */
 .neutral-btn { background-image: none; background-color: #1e1e1e; color: #bdbdbd; border: 1px solid #2e2e2e; border-radius: 7px; padding: 6px 13px; font-size: 11px; transition: all 120ms ease; }
 .neutral-btn:hover { background-color: #262626; color: #ffffff; border-color: #14B8A6; }
 .neutral-btn:active { background-color: #2e2e2e; }
-#btn_download { background-image: none; background-color: #14B8A6; color: #ffffff; border: none; border-radius: 7px; padding: 9px 20px; font-size: 13px; font-weight: bold; box-shadow: 0 1px 5px rgba(20, 184, 166, 0.32); transition: background-color 120ms ease; }
+#btn_download { background-image: none; background-color: #14B8A6; color: #0a0a0a; border: none; border-radius: 7px; padding: 9px 20px; font-size: 13px; font-weight: bold; box-shadow: 0 1px 5px rgba(20, 184, 166, 0.32); transition: background-color 120ms ease; }
 #btn_download:hover { background-color: #1FC8B7; }
 #btn_download:active { background-color: #0F9D8F; }
 #btn_download:disabled { background-color: #2a2a2a; color: #5e5e5e; box-shadow: none; }
