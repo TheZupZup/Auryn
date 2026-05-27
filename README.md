@@ -16,7 +16,7 @@
   <a href="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml/badge.svg" alt="Linux packages"></a>
   <a href="https://github.com/TheZupZup/Auryn/releases/latest"><img src="https://img.shields.io/github/v/release/TheZupZup/Auryn?label=release" alt="Latest release"></a>
   <a href="https://www.mozilla.org/en-US/MPL/2.0/"><img src="https://img.shields.io/github/license/TheZupZup/Auryn" alt="License: MPL-2.0"></a>
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20(experimental)-blue" alt="Platform: Linux, experimental Windows">
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20(experimental)-2C8770" alt="Platform: Linux, experimental Windows">
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 
 Auryn is a clean, modern dark-themed graphical front-end for
 [streamrip](https://github.com/nathom/streamrip), the open-source command-line
-audio downloader. Its calm deep-teal → aqua accent keeps long download
+audio downloader. Its calm sea-glass jade accent keeps long download
 sessions comfortable to watch. It turns streamrip's terminal workflow into a one-window
 desktop app: **paste a link, pick a quality, and watch progress, metadata,
 cover art, and lyrics appear as your library grows** — then drop the result

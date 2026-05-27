@@ -3,27 +3,32 @@
 <!-- Export: see assets/README.md -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
-    <!-- Premium deep-teal -> aqua tile gradient (the Auryn accent identity). -->
+    <!-- Calm sea-glass jade tile gradient (the Auryn accent identity):
+         deep jade in the top-left settling into soft sea-glass. -->
     <linearGradient id="tile" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0B7C6F"/>
-      <stop offset="100%" stop-color="#23C9B1"/>
+      <stop offset="0%" stop-color="#2C8770"/>
+      <stop offset="100%" stop-color="#74CEB3"/>
     </linearGradient>
     <!-- Soft white -> sea-glass for the mark so it never looks flat. -->
     <linearGradient id="mark" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#E6FFF9"/>
+      <stop offset="100%" stop-color="#E8FBF5"/>
     </linearGradient>
   </defs>
 
   <!-- Rounded app tile -->
-  <rect x="2" y="2" width="60" height="60" rx="15" ry="15" fill="url(#tile)"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" ry="14" fill="url(#tile)"/>
   <!-- Soft top highlight for app-tile depth -->
-  <rect x="2" y="2" width="60" height="32" rx="15" ry="15" fill="#ffffff" opacity="0.08"/>
+  <rect x="2" y="2" width="60" height="31" rx="14" ry="14" fill="#ffffff" opacity="0.10"/>
+  <!-- Faint inner edge for a crisp, premium tile rim -->
+  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="12" ry="12"
+        fill="none" stroke="#ffffff" stroke-width="0.75" opacity="0.10"/>
 
-  <!-- Auryn monogram: a clean geometric "A" whose counter is a subtle play
-       triangle — a quiet nod to music/playback, kept geometric and never
-       literal. Reads as a confident "A" down to 16px. -->
-  <path fill="url(#mark)" stroke="url(#mark)" stroke-width="1.5" stroke-linejoin="round" fill-rule="evenodd"
-        d="M 32 15 L 47.5 49 L 40 49 L 36.8 42 L 27.2 42 L 24 49 L 16.5 49 Z
-           M 29.9 29.4 L 29.9 38.4 L 36.7 33.9 Z"/>
+  <!-- Auryn monogram: a confident geometric "A" whose counter is a clean
+       right-pointing play triangle — a quiet, never-literal nod to music
+       playback. The notch between the legs keeps it reading as an "A" down
+       to 16px. -->
+  <path fill="url(#mark)" stroke="url(#mark)" stroke-width="1.4" stroke-linejoin="round" fill-rule="evenodd"
+        d="M 32 13 L 49.5 51 L 41.8 51 L 38.2 43.4 L 25.8 43.4 L 22.2 51 L 14.5 51 Z
+           M 29.5 27.5 L 29.5 38.5 L 38 33 Z"/>
 </svg>

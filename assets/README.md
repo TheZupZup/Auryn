@@ -2,7 +2,7 @@
 
 `Auryn.svg` is the source of truth for the application icon: a geometric
 **"A" monogram** (its counter is a subtle play triangle — a quiet nod to
-music) on a premium deep-teal → aqua tile that matches the in-app accent. The
+music) on a calm sea-glass jade tile that matches the in-app accent. The
 PNG sizes (`Auryn_16.png`, `Auryn_32.png`, `Auryn_48.png`, `Auryn_256.png`)
 and the multi-size Windows icon (`Auryn.ico`) are exported from it. These are
 the files referenced by the `.deb` / `.rpm` packaging and the Windows spec.
