@@ -65,16 +65,31 @@ def _import_gtk():
 
 
 # ── Visual identity ──────────────────────────────────────────────────────────
-# Auryn's accent is a premium deep-teal → aqua family (jade / sea-glass).
+# Auryn's accent is a calm sea-glass jade family. It is deliberately
+# desaturated (hue ~162°, ~42% saturation) rather than a bright electric
+# cyan: a softer, premium green-teal that stays comfortable across long
+# library sessions and reads clearly on the near-black canvas.
 # Gradients are reserved for branding and key active states (the logo, the
 # Start Download button, the selected quality, progress); everything else uses
-# the solid accent so the app stays calm, readable and serious for long
-# sessions. Bright accents always carry dark charcoal "ink" text for contrast.
-ACCENT       = "#18C5AD"   # primary jade-teal accent (text, borders, active)
-ACCENT_DEEP  = "#0C8275"   # deep teal — gradient start / pressed
-ACCENT_AQUA  = "#2FD6BE"   # soft aqua — gradient end / hover highlight
-ACCENT_GLOW  = "#5CE9D5"   # sea-glass — focus rings / faint glows
-ACCENT_INK   = "#06241F"   # dark charcoal-teal text on bright accent/gradient
+# the solid accent so the app stays calm, readable and serious. Bright accents
+# always carry dark "ink" text for contrast (≈6.9:1 against the accent).
+ACCENT       = "#55BA9B"   # primary sea-glass jade (text, borders, active)
+ACCENT_DEEP  = "#32866D"   # deep jade — gradient start / pressed
+ACCENT_AQUA  = "#73CAB0"   # soft sea-glass — gradient end / hover highlight
+ACCENT_GLOW  = "#9AD6C4"   # pale sea-glass — focus rings / faint glows
+ACCENT_INK   = "#0A241C"   # dark jade-charcoal text on bright accent/gradient
+
+
+def _rgb(hex_color):
+    """'#rrggbb' → 'r, g, b' so the one accent definition also drives the
+    translucent rgba() glows/tints in the CSS (no hardcoded triplets)."""
+    h = hex_color.lstrip("#")
+    return "%d, %d, %d" % (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+ACCENT_RGB = _rgb(ACCENT)
+AQUA_RGB   = _rgb(ACCENT_AQUA)
+GLOW_RGB   = _rgb(ACCENT_GLOW)
 
 # Layered near-black canvas, very lightly cooled toward the accent so the
 # whole window feels cohesive rather than flat neutral grey.
@@ -90,8 +105,8 @@ TEXT         = "#E8E8E8"
 # below, so a GTK build that cannot parse a gradient still renders a clean
 # solid-accent surface rather than a broken (transparent) one.
 GRAD_PRIMARY        = "linear-gradient(to bottom right, %s, %s)" % (ACCENT_DEEP, ACCENT_AQUA)
-GRAD_PRIMARY_HOVER  = "linear-gradient(to bottom right, #0F9482, #45E0CC)"
-GRAD_PRIMARY_ACTIVE = "linear-gradient(to bottom right, #0A6F64, #25C3AC)"
+GRAD_PRIMARY_HOVER  = "linear-gradient(to bottom right, #3A9C7F, #84D2BA)"
+GRAD_PRIMARY_ACTIVE = "linear-gradient(to bottom right, #2B735E, #58C1A1)"
 GRAD_PROGRESS       = "linear-gradient(to right, %s, %s)" % (ACCENT_DEEP, ACCENT_AQUA)
 
 CSS = Template("""
@@ -102,23 +117,23 @@ CSS = Template("""
 window { background-color: $bg_window; color: $text; }
 
 /* -- Top bar (branding hero) -- */
-#header_bar { background-color: $bg_header; border-bottom: 2px solid $accent; box-shadow: 0 3px 12px -7px rgba(24, 197, 173, 0.70); padding: 11px 18px; min-height: 54px; }
+#header_bar { background-color: $bg_header; border-bottom: 2px solid $accent; box-shadow: 0 3px 12px -7px rgba($accent_rgb, 0.70); padding: 11px 18px; min-height: 54px; }
 
 /* -- Right metadata panel (protected layout -- spacing/polish only) -- */
 #right_panel { background-color: $bg_panel; border-left: 1px solid $border; padding: 15px 14px; min-width: 212px; }
 
 /* -- Source URL input -- */
 #url_entry { background-color: $bg_input; color: #f2f2f2; border: 1px solid $border; border-radius: 9px; padding: 11px 14px; font-family: 'Ubuntu Mono', monospace; font-size: 13px; caret-color: $accent; transition: border-color 140ms ease, box-shadow 140ms ease; }
-#url_entry:focus { border-color: $accent; box-shadow: 0 0 0 3px rgba(92, 233, 213, 0.22); }
+#url_entry:focus { border-color: $accent; box-shadow: 0 0 0 3px rgba($glow_rgb, 0.22); }
 .cred-entry { background-color: $bg_input; color: #f2f2f2; border: 1px solid $border; border-radius: 7px; padding: 8px 12px; font-family: 'Ubuntu Mono', monospace; font-size: 12px; caret-color: $accent; transition: border-color 140ms ease, box-shadow 140ms ease; }
-.cred-entry:focus { border-color: $accent; box-shadow: 0 0 0 3px rgba(92, 233, 213, 0.18); }
+.cred-entry:focus { border-color: $accent; box-shadow: 0 0 0 3px rgba($glow_rgb, 0.18); }
 
 /* -- Quality selector (segmented toggle buttons; draw-indicator=False
       check buttons render on a `button` node) -- */
 #quality_box { background-color: $bg_input; border: 1px solid $border; border-radius: 10px; padding: 5px 6px; }
 #quality_box button { background-image: none; background-color: transparent; box-shadow: none; color: #aeb3b1; font-size: 12px; padding: 6px 14px; border-radius: 7px; border: 1px solid transparent; transition: all 140ms ease; }
 #quality_box button:hover { color: #ffffff; background-color: #1b201e; }
-#quality_box button:checked { background-color: $accent; background-image: $grad_primary; color: $ink; font-weight: bold; box-shadow: 0 1px 7px -2px rgba(24, 197, 173, 0.60); }
+#quality_box button:checked { background-color: $accent; background-image: $grad_primary; color: $ink; font-weight: bold; box-shadow: 0 1px 7px -2px rgba($accent_rgb, 0.60); }
 #quality_box button:checked label { color: $ink; }
 
 /* -- Plain checkboxes (cache / organise / playlists toggles) -- */
@@ -131,12 +146,12 @@ checkbutton label:hover { color: $accent; }
 .neutral-btn { background-image: none; background-color: #1b1f1d; color: #c2c7c5; border: 1px solid $border; border-radius: 8px; padding: 6px 14px; font-size: 11px; transition: all 140ms ease; }
 .neutral-btn:hover { background-color: #232826; color: #ffffff; border-color: $accent; }
 .neutral-btn:active { background-color: #2b302e; }
-#btn_download { background-color: $accent; background-image: $grad_primary; color: $ink; border: none; border-radius: 9px; padding: 10px 22px; font-size: 13px; font-weight: bold; box-shadow: 0 2px 14px -3px rgba(24, 197, 173, 0.55); transition: background-image 140ms ease, box-shadow 140ms ease; }
-#btn_download:hover { background-image: $grad_primary_hover; box-shadow: 0 4px 18px -3px rgba(47, 214, 190, 0.65); }
-#btn_download:active { background-image: $grad_primary_active; box-shadow: 0 1px 7px -3px rgba(24, 197, 173, 0.55); }
+#btn_download { background-color: $accent; background-image: $grad_primary; color: $ink; border: none; border-radius: 9px; padding: 10px 22px; font-size: 13px; font-weight: bold; box-shadow: 0 2px 14px -3px rgba($accent_rgb, 0.55); transition: background-image 140ms ease, box-shadow 140ms ease; }
+#btn_download:hover { background-image: $grad_primary_hover; box-shadow: 0 4px 18px -3px rgba($aqua_rgb, 0.65); }
+#btn_download:active { background-image: $grad_primary_active; box-shadow: 0 1px 7px -3px rgba($accent_rgb, 0.55); }
 #btn_download:disabled { background-color: #242927; background-image: none; color: #5b605e; box-shadow: none; }
-#btn_add_queue { background-image: none; background-color: rgba(24, 197, 173, 0.12); color: $accent; border: 1px solid rgba(24, 197, 173, 0.50); border-radius: 9px; padding: 9px 17px; font-size: 12px; font-weight: bold; transition: all 140ms ease; }
-#btn_add_queue:hover { background-color: rgba(24, 197, 173, 0.20); border-color: $accent; color: $accent_aqua; }
+#btn_add_queue { background-image: none; background-color: rgba($accent_rgb, 0.12); color: $accent; border: 1px solid rgba($accent_rgb, 0.50); border-radius: 9px; padding: 9px 17px; font-size: 12px; font-weight: bold; transition: all 140ms ease; }
+#btn_add_queue:hover { background-color: rgba($accent_rgb, 0.20); border-color: $accent; color: $accent_aqua; }
 #btn_stop { background-image: none; background-color: #c0392b; color: #ffffff; border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: bold; transition: background-color 140ms ease; }
 #btn_stop:hover { background-color: #e74c3c; }
 
@@ -178,6 +193,7 @@ separator { background-color: $border; min-width: 1px; min-height: 1px; }
     bg_window=BG_WINDOW, bg_header=BG_HEADER, bg_panel=BG_PANEL,
     bg_input=BG_INPUT, bg_log=BG_LOG, border=BORDER, text=TEXT,
     accent=ACCENT, accent_aqua=ACCENT_AQUA, ink=ACCENT_INK,
+    accent_rgb=ACCENT_RGB, aqua_rgb=AQUA_RGB, glow_rgb=GLOW_RGB,
     grad_primary=GRAD_PRIMARY, grad_primary_hover=GRAD_PRIMARY_HOVER,
     grad_primary_active=GRAD_PRIMARY_ACTIVE, grad_progress=GRAD_PROGRESS,
 ).encode("utf-8")
@@ -626,7 +642,7 @@ class AurynApp:
         buf = self.log_view.get_buffer()
         buf.create_tag("ok",    foreground="#87a556")
         buf.create_tag("error", foreground="#e74c3c")
-        buf.create_tag("track", foreground="#18C5AD")
+        buf.create_tag("track", foreground=ACCENT)
         buf.create_tag("info",  foreground="#555555")
         buf.create_tag("dim",   foreground="#333333")
 
@@ -689,7 +705,7 @@ class AurynApp:
                      .replace("<", "&lt;")
                      .replace(">", "&gt;"))
         self.folder_lbl.set_markup(
-            f'<span foreground="#18C5AD" size="small">📁  {safe_path}</span>')
+            f'<span foreground="{ACCENT}" size="small">📁  {safe_path}</span>')
 
         try:
             quality_idx = int(self._config.get("quality_level", 3))
@@ -766,7 +782,7 @@ class AurynApp:
                          .replace("<", "&lt;")
                          .replace(">", "&gt;"))
             self.folder_lbl.set_markup(
-                f'<span foreground="#18C5AD" size="small">📁  {safe_path}</span>')
+                f'<span foreground="{ACCENT}" size="small">📁  {safe_path}</span>')
             self._persist_preferences()
         dlg.destroy()
 
@@ -818,7 +834,7 @@ class AurynApp:
     def _history_status_color(status):
         return {
             "Completed":   "#87a556",
-            "Downloading": "#18C5AD",
+            "Downloading": ACCENT,
             "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
         }.get(status, "#aaaaaa")
@@ -980,7 +996,7 @@ class AurynApp:
     def _queue_status_color(status):
         return {
             "Queued":      "#888888",
-            "Downloading": "#18C5AD",
+            "Downloading": ACCENT,
             "Completed":   "#87a556",
             "Warning":     "#e0a83b",
             "Failed":      "#e74c3c",
@@ -2057,7 +2073,7 @@ class AurynApp:
                     m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                     if m:
                         GLib.idle_add(self.speed_lbl.set_markup,
-                            f'<span foreground="#18C5AD" size="small">⬇  {m.group(1)}  </span>')
+                            f'<span foreground="{ACCENT}" size="small">⬇  {m.group(1)}  </span>')
 
         try:
             os.close(master_fd)
@@ -2110,7 +2126,7 @@ class AurynApp:
                 m = re.search(r"([\d.]+\s*[KMG]B/s)", clean)
                 if m:
                     GLib.idle_add(self.speed_lbl.set_markup,
-                        f'<span foreground="#18C5AD" size="small">⬇  {m.group(1)}  </span>')
+                        f'<span foreground="{ACCENT}" size="small">⬇  {m.group(1)}  </span>')
         except Exception:
             pass
 
@@ -2301,7 +2317,7 @@ class AurynApp:
 
     _PROG_STATUS_COLORS = {
         dsession.QUEUED:      "#888888",
-        dsession.DOWNLOADING: "#18C5AD",
+        dsession.DOWNLOADING: ACCENT,
         dsession.COMPLETE:    "#87a556",
         dsession.SKIPPED:     "#e0a83b",
         dsession.ERROR:       "#e74c3c",
@@ -2533,7 +2549,7 @@ class AurynApp:
     def _progress_detail_markup(self, track):
         if track.status == dsession.DOWNLOADING:
             txt = track.speed or "downloading…"
-            color = "#18C5AD"
+            color = ACCENT
         elif track.status == dsession.COMPLETE:
             txt = self._progress_format_elapsed(track.elapsed) or "done"
             color = "#6f8f48"
@@ -2613,7 +2629,7 @@ class AurynApp:
             markup = ('<span foreground="#e74c3c" size="small" weight="bold">'
                       '❌  Download failed — see Raw Log.</span>')
         elif total > 0:
-            markup = (f'<span foreground="#18C5AD" size="small">'
+            markup = (f'<span foreground="{ACCENT}" size="small">'
                       f'Downloading… {done}/{total} complete.</span>')
         else:
             markup = ('<span foreground="#777777" size="small">'
@@ -3665,7 +3681,7 @@ class AurynApp:
             safe = (url.replace("&", "&amp;")
                     .replace("<", "&lt;").replace(">", "&gt;"))
             url_lbl.set_markup(
-                '<span foreground="#18C5AD" size="small">Login link: '
+                f'<span foreground="{ACCENT}" size="small">Login link: '
                 f'<tt>{safe}</tt></span>')
             set_status("Open the login link in your browser and approve this "
                        "device. Waiting for streamrip to receive the "
@@ -4559,7 +4575,7 @@ class AurynApp:
                 safe_track = track.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 safe_lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 clean_lyrics = re.sub(r'\[\d+:\d+\.\d+\]', '', safe_lyrics).strip()
-                markup = f'<span foreground="#18C5AD" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
+                markup = f'<span foreground="{ACCENT}" weight="bold" size="large">{safe_track}</span>\n\n{clean_lyrics}'
                 GLib.idle_add(self.lyrics_label.set_markup, markup)
             else:
                 track_esc = track.replace("&", "&amp;").replace("<", "&lt;")

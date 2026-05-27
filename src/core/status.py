@@ -1,9 +1,11 @@
 """Status bar helpers: color mapping and markup builder."""
 
+# "track" is Auryn's sea-glass jade accent; keep it in sync with ACCENT in
+# Auryn.py (this is a GTK-free core module, so the value is mirrored here).
 STATUS_COLORS = {
     "ok":    "#87a556",
     "error": "#e74c3c",
-    "track": "#18C5AD",
+    "track": "#55BA9B",
     "info":  "#555555",
 }
 
