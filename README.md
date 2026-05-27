@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Build your own music library.</b><br>
-  A privacy-friendly desktop GUI for <a href="https://github.com/nathom/streamrip">streamrip</a> —
+  A polished, privacy-friendly desktop GUI for <a href="https://github.com/nathom/streamrip">streamrip</a> —
   download from Deezer, Qobuz, TIDAL &amp; SoundCloud straight into a
   NAS / Jellyfin / Plex-friendly folder. No terminal required.
 </p>
@@ -27,9 +27,10 @@
 
 ## What is Auryn?
 
-Auryn is a clean, dark-themed graphical front-end for
+Auryn is a clean, modern dark-themed graphical front-end for
 [streamrip](https://github.com/nathom/streamrip), the open-source command-line
-audio downloader. It turns streamrip's terminal workflow into a one-window
+audio downloader. Its calm deep-teal → aqua accent keeps long download
+sessions comfortable to watch. It turns streamrip's terminal workflow into a one-window
 desktop app: **paste a link, pick a quality, and watch progress, metadata,
 cover art, and lyrics appear as your library grows** — then drop the result
 straight into Jellyfin, Plex, Symfonium, Plexamp, or any offline player.
