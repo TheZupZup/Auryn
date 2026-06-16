@@ -323,12 +323,12 @@ def resolve_config_dir():
     streamrip uses click.get_app_dir("streamrip"): on Windows that is
     %APPDATA%\\streamrip, and on Linux it is $XDG_CONFIG_HOME/streamrip
     (defaulting to ~/.config/streamrip).
+
+    Delegates to core.tidal_auth.streamrip_config_dir so this path has a
+    single source of truth shared by the app, ``--doctor``, the preflight
+    checks and the unit tests (previously this logic was duplicated here).
     """
-    if IS_WINDOWS:
-        base = os.environ.get("APPDATA") or os.path.expanduser("~")
-        return os.path.join(base, "streamrip")
-    xdg = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    return os.path.join(xdg, "streamrip")
+    return tidal_auth.streamrip_config_dir()
 
 
 def toml_escape(value):
@@ -1560,8 +1560,16 @@ class AurynApp:
         cfg_path = os.path.join(resolve_config_dir(), "config.toml")
         if not os.path.exists(cfg_path):
             if auto_fix and rip_cmd:
+                creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                 if IS_WINDOWS else 0)
                 try:
-                    result = subprocess.run(rip_cmd + ["config", "reset"], capture_output=True, text=True)
+                    # stdin=DEVNULL + timeout so a streamrip prompt can never
+                    # block the GTK thread; CREATE_NO_WINDOW avoids a console
+                    # flash on Windows (mirrors _ensure_streamrip_config).
+                    result = subprocess.run(
+                        rip_cmd + ["config", "reset"],
+                        capture_output=True, text=True, timeout=30,
+                        stdin=subprocess.DEVNULL, creationflags=creationflags)
                     if result.returncode != 0:
                         issues.append("Unable to generate streamrip config automatically.")
                 except Exception:
@@ -2056,9 +2064,7 @@ class AurynApp:
 
             while "\n" in buf:
                 line, buf = buf.split("\n", 1)
-                clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', line)
-                clean = re.sub(r'\x1b\][^\x07]*\x07', '', clean)
-                clean = re.sub(r'\r', '', clean)
+                clean = log_format.clean_stream_line(line)
                 if clean.strip():
                     GLib.idle_add(self._parse_line, clean + "\n")
                     if re.search(r'Track Download Done', clean, re.I):
@@ -2106,9 +2112,7 @@ class AurynApp:
 
         try:
             for line in self._process.stdout:
-                clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', line)
-                clean = re.sub(r'\x1b\][^\x07]*\x07', '', clean)
-                clean = clean.replace('\r', '')
+                clean = log_format.clean_stream_line(line)
                 if not clean.strip():
                     continue
                 if not clean.endswith("\n"):
@@ -3763,9 +3767,7 @@ class AurynApp:
                     for raw in proc.stdout:
                         if stop.is_set():
                             break
-                        clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', raw)
-                        clean = re.sub(r'\x1b\][^\x07]*\x07', '', clean)
-                        clean = clean.replace('\r', '')
+                        clean = log_format.clean_stream_line(raw)
                         clean = self._scrub_secrets(clean)
                         if not clean.strip():
                             continue
@@ -4395,9 +4397,8 @@ class AurynApp:
         buf_io = io.StringIO()
         with contextlib.redirect_stdout(buf_io), contextlib.redirect_stderr(buf_io):
             try:
-                ok = run_doctor(verbose=True)
+                run_doctor(verbose=True)
             except Exception as exc:
-                ok = False
                 print(f"FAIL  Diagnostics raised an exception: {exc}")
         output = buf_io.getvalue() or "(no output)"
         cfg_path = self._streamrip_config_path()

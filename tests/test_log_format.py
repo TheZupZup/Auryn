@@ -59,6 +59,62 @@ def test_sanitize_preserves_unicode_emoji_and_paths():
     assert lf.sanitize_log_text(src) == src
 
 
+# ── clean_stream_line ─────────────────────────────────────────────────
+#
+# The download / TIDAL-login pumps pre-clean each raw streamrip line with
+# this helper before parsing it for progress signals. These tests pin the
+# exact behaviour the pumps historically open-coded inline so the shared
+# extraction stays byte-for-byte compatible with the protected pipeline.
+
+def _legacy_clean(line):
+    """The exact inline cleanup the three output pumps used before the
+    helper was extracted — used to assert equivalence."""
+    import re
+    clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', line)
+    clean = re.sub(r'\x1b\][^\x07]*\x07', '', clean)
+    return clean.replace('\r', '')
+
+
+def test_clean_stream_line_empty_or_none_returns_empty():
+    assert lf.clean_stream_line("") == ""
+    assert lf.clean_stream_line(None) == ""
+
+
+def test_clean_stream_line_strips_sgr_colour_codes():
+    assert lf.clean_stream_line("\x1b[31mERROR\x1b[0m here") == "ERROR here"
+
+
+def test_clean_stream_line_strips_cursor_and_clear_codes():
+    # CSI sequences ending in G / K / H / F are cursor / clear-line codes.
+    assert lf.clean_stream_line("\x1b[2K\x1b[1Gprogress") == "progress"
+
+
+def test_clean_stream_line_strips_osc_title_sequence():
+    assert lf.clean_stream_line("\x1b]0;window title\x07real text") == "real text"
+
+
+def test_clean_stream_line_removes_all_carriage_returns():
+    assert lf.clean_stream_line("a\rb\r\nc") == "ab\nc"
+
+
+def test_clean_stream_line_preserves_trailing_newline_and_unicode():
+    src = "Downloading 'Café — Track'\n"
+    assert lf.clean_stream_line(src) == src
+
+
+def test_clean_stream_line_matches_legacy_inline_behaviour():
+    samples = [
+        "\x1b[32mINFO\x1b[0m  Track Download Done\r\n",
+        "\x1b[2K\rDownloading track 'Hello' 1.23 MB/s",
+        "\x1b]0;rip\x07ERROR  Error downloading track: list index out of range\n",
+        "plain line, no escapes\n",
+        "",
+        "\r\n",
+    ]
+    for s in samples:
+        assert lf.clean_stream_line(s) == _legacy_clean(s)
+
+
 # ── wrap_long_line ────────────────────────────────────────────────────
 
 def test_wrap_short_line_unchanged():

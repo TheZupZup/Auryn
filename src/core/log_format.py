@@ -75,6 +75,36 @@ def sanitize_log_text(text):
     return ''.join(out)
 
 
+# ── Parse-time line cleanup ───────────────────────────────────────────
+#
+# The download / TIDAL-login output pumps strip a small, fixed set of
+# terminal escapes from each raw streamrip line *before* matching it for
+# progress / title / speed signals, so the parsing regexes anchor on the
+# real message. This is intentionally lighter than sanitize_log_text (the
+# fuller display-time pass that still runs afterwards): it only removes
+# the SGR-colour / cursor CSI sequences with a final byte in "mGKHF", OSC
+# sequences terminated by BEL, and carriage returns. Defined once here so
+# the three pumps share a single implementation instead of re-coding it.
+_STREAM_CSI_RE = re.compile(r'\x1b\[[0-9;]*[mGKHF]')
+_STREAM_OSC_RE = re.compile(r'\x1b\][^\x07]*\x07')
+
+
+def clean_stream_line(line):
+    """Strip terminal colour/cursor escapes and carriage returns from *line*.
+
+    Returns the cleaned line (without altering its newline, if any) so the
+    progress parsers see plain text. Tolerates ``None`` / non-string input
+    by returning ``""`` rather than raising, so a pump can never crash on a
+    malformed read.
+    """
+    if not line:
+        return ""
+    s = line if isinstance(line, str) else str(line)
+    s = _STREAM_CSI_RE.sub('', s)
+    s = _STREAM_OSC_RE.sub('', s)
+    return s.replace('\r', '')
+
+
 # Soft-wrap width tuned to the visible columns of the log panel at the
 # default window size. GTK's own word-wrap handles paragraphs with
 # whitespace; this helper exists for unbroken paths / URLs / traceback
