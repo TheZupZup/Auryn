@@ -60,7 +60,15 @@ jobs:
       - name: Lint the manifest (informational)
         # Not yet gating: this is the check the app must pass before a Flathub
         # submission, surfaced early so the work is visible.
+        #
+        # org.flatpak.Builder is not part of the CI image, so it has to be
+        # installed before flatpak-builder-lint can run — without this the step
+        # only ever printed "app/org.flatpak.Builder/x86_64/master not
+        # installed" and continue-on-error hid it.
         continue-on-error: true
         run: |
+          flatpak remote-add --if-not-exists --user \
+            flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.flatpak.Builder
           flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
             manifest packaging/flatpak/io.github.thezupzup.Auryn.yml
