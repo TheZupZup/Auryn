@@ -6,6 +6,17 @@ workflow (`.github/workflows/linux-packages.yml`):
 - `.deb` for Debian/Ubuntu (built with `dpkg-deb`)
 - `.rpm` for Fedora/openSUSE/RHEL (noarch, built with `rpmbuild`)
 - Windows builds live under `packaging/windows/` (separate flow)
+- **Flatpak** lives under `packaging/flatpak/` (separate `Flatpak` workflow) —
+  see [`packaging/flatpak/README.md`](flatpak/README.md)
+
+## streamrip *is* bundled in the Flatpak
+
+The section below applies to the `.deb` and `.rpm` packages. The **Flatpak is
+the exception**: it bundles streamrip and its entire Python dependency tree
+inside the sandbox at `/app/bin/rip`, so a Flatpak user installs nothing by
+hand and is never prompted to `pip install streamrip`. `src/core/flatpak.py`
+resolves that bundled copy first, and only inside the sandbox, so the
+behaviour below is untouched for every other install method.
 
 ## streamrip is not a hard dependency
 

@@ -1,0 +1,66 @@
+name: Flatpak
+
+# Builds the Auryn Flatpak and uploads the resulting bundle as a workflow
+# artifact so reviewers can install and test it:
+#
+#   flatpak install --user Auryn.flatpak
+#
+# This workflow deliberately does NOT publish to Flathub. Flathub publishing
+# happens from a separate flathub/<app-id> repository and needs the manifest
+# switched to a tagged source first — see packaging/flatpak/README.md.
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-flatpak:
+    name: Build Flatpak bundle
+    runs-on: ubuntu-latest
+    # The image ships flatpak, flatpak-builder and the GNOME SDK, so the job
+    # does not spend several minutes installing the runtime on every run.
+    # Keep the tag in step with runtime-version in the manifest.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sanity-check sources (py_compile)
+        run: python3 -m py_compile src/Auryn.py src/core/flatpak.py src/core/streamrip_exec.py
+
+      - name: Validate AppStream metainfo
+        run: |
+          appstreamcli validate --no-net \
+            packaging/flatpak/io.github.thezupzup.Auryn.metainfo.xml
+
+      - name: Validate desktop entry
+        run: |
+          desktop-file-validate \
+            packaging/flatpak/io.github.thezupzup.Auryn.desktop
+
+      - name: Build Flatpak and export a bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: Auryn.flatpak
+          manifest-path: packaging/flatpak/io.github.thezupzup.Auryn.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+          # x86_64 only. Building aarch64 needs QEMU emulation, which makes the
+          # five C-extension sdists (aiohttp, Pillow, pycryptodomex, pycares,
+          # cffi) far too slow for CI. Revisit for Flathub, which builds both.
+          arch: x86_64
+
+      - name: Lint the manifest (informational)
+        # Not yet gating: this is the check the app must pass before a Flathub
+        # submission, surfaced early so the work is visible.
+        continue-on-error: true
+        run: |
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
+            manifest packaging/flatpak/io.github.thezupzup.Auryn.yml

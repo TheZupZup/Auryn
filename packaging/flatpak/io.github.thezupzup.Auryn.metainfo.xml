@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for the Auryn Flatpak.
+
+     The component id, the <launchable> desktop-id and the installed icon
+     basename must all equal the manifest's app-id, otherwise the desktop
+     shell shows a nameless, icon-less entry. Validate changes with:
+         flatpak run org.freedesktop.appstream-glib validate \
+             io.github.thezupzup.Auryn.metainfo.xml
+-->
+<component type="desktop-application">
+  <id>io.github.thezupzup.Auryn</id>
+
+  <name>Auryn</name>
+  <summary>Build your own music library</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+
+  <developer id="io.github.thezupzup">
+    <name>TheZupZup</name>
+  </developer>
+
+  <description>
+    <p>
+      Auryn is a desktop front-end for streamrip, the open-source command-line
+      audio downloader. It turns streamrip's terminal workflow into a single
+      window: paste a link, pick a quality, and watch progress, metadata, cover
+      art and lyrics appear as your library grows.
+    </p>
+    <p>
+      Finished downloads can be sorted into a tidy Album Artist / Album /
+      Quality tree, so Jellyfin, Plex, Symfonium and Plexamp index them
+      immediately.
+    </p>
+    <p>
+      This Flatpak bundles streamrip and all of its Python dependencies, so
+      there is nothing to install by hand. You supply your own service
+      credentials; they are written only to streamrip's own configuration file
+      inside the sandbox, and are never displayed or logged.
+    </p>
+    <p>
+      Auryn does not host, distribute or provide access to any content. It is a
+      graphical wrapper around a tool you configure yourself, and you are
+      responsible for using it within the terms of the services you access.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.thezupzup.Auryn.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>The Auryn main window during a download</caption>
+      <image>https://raw.githubusercontent.com/TheZupZup/Auryn/main/assets/Auryn_ui.png</image>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/TheZupZup/Auryn</url>
+  <url type="bugtracker">https://github.com/TheZupZup/Auryn/issues</url>
+  <url type="vcs-browser">https://github.com/TheZupZup/Auryn</url>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Music</category>
+  </categories>
+
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>download</keyword>
+    <keyword>streamrip</keyword>
+    <keyword>flac</keyword>
+    <keyword>library</keyword>
+  </keywords>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.2.10" date="2026-08-15">
+      <description>
+        <p>First experimental Flatpak packaging of Auryn, bundling streamrip
+        and its Python dependencies.</p>
+      </description>
+    </release>
+  </releases>
+</component>

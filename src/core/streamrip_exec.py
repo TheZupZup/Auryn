@@ -5,7 +5,15 @@ streamrip CLI across the two very different ways Auryn ships:
 
   * **Linux / from source** — streamrip is a separately installed tool. Auryn
     finds the ``rip`` command on ``PATH`` (or in the usual per-user install
-    locations) and spawns it, exactly as it always has.
+    locations) and spawns it, exactly as it always has. The ``.deb`` and
+    ``.rpm`` packages use this path unchanged.
+
+  * **Flatpak** — the manifest installs streamrip and its whole Python
+    dependency tree into the sandbox, so ``/app/bin/rip`` is always present
+    and is resolved first (see ``core.flatpak``). ``/app/bin`` is on ``PATH``
+    anyway, but resolving it explicitly stops a stale configured path that
+    points at a host binary — which does not exist inside the sandbox — from
+    winning.
 
   * **Packaged Windows build** — the PyInstaller bundle ships streamrip and
     all of its Python dependencies *inside* the frozen application, so the end
@@ -18,9 +26,14 @@ The public resolver, :func:`get_streamrip_executable`, returns a command
 **argv list** (so the multi-call form ``[sys.executable, "--run-streamrip"]``
 works the same as a plain ``["/usr/bin/rip"]``) using this search order:
 
-    1. streamrip bundled inside a packaged Windows build,
-    2. an explicitly configured streamrip path, if present,
-    3. the system ``PATH`` / common per-user install locations.
+    1. streamrip bundled inside the Flatpak, when running in one,
+    2. streamrip bundled inside a packaged Windows build,
+    3. an explicitly configured streamrip path, if present,
+    4. the system ``PATH`` / common per-user install locations.
+
+Steps 1 and 2 are mutually exclusive (a Flatpak is never a frozen Windows
+build), and both are inert everywhere else, so step 3 → 4 remains exactly the
+behaviour that source, ``.deb`` and ``.rpm`` installs have always had.
 
 Every function takes injectable parameters (``frozen``, ``system``,
 ``environ`` …) so the logic can be unit-tested without a frozen build, a GTK
@@ -34,6 +47,8 @@ import os
 import platform
 import shutil
 import sys
+
+from . import flatpak
 
 # argv flag that makes a packaged Auryn.exe run streamrip's CLI in-process
 # instead of starting the GUI. Auryn's ``__main__`` checks for this before it
@@ -131,6 +146,20 @@ def get_bundled_streamrip_path(frozen=None, system=None, meipass=None,
     return None
 
 
+def is_flatpak_build(environ=None, isfile=None):
+    """True when Auryn is running inside its Flatpak sandbox.
+
+    Thin re-export of :func:`core.flatpak.is_flatpak` so callers that already
+    import this module for packaging questions have one place to ask them.
+    """
+    return flatpak.is_flatpak(environ=environ, isfile=isfile)
+
+
+def get_flatpak_streamrip_path(environ=None, isfile=None):
+    """Resolve the streamrip bundled in the Flatpak, or None outside one."""
+    return flatpak.get_bundled_streamrip_path(environ=environ, isfile=isfile)
+
+
 def get_configured_streamrip_path(configured_path, isfile=None):
     """Return ``[path]`` when *configured_path* points at a real file, else None."""
     if not configured_path:
@@ -201,10 +230,19 @@ def get_streamrip_executable(configured_path=None, frozen=None, system=None,
     """Resolve the streamrip command to run, as an argv list (or None).
 
     Search order:
-        1. bundled streamrip inside a packaged Windows build,
-        2. an explicitly configured streamrip path,
-        3. the system PATH / common per-user install locations.
+        1. bundled streamrip inside the Flatpak, when running in one,
+        2. bundled streamrip inside a packaged Windows build,
+        3. an explicitly configured streamrip path,
+        4. the system PATH / common per-user install locations.
     """
+    # Flatpak is a Linux-only container format, so a Windows build — packaged
+    # or not — can never be inside one. Skipping the probe there keeps the two
+    # bundling schemes strictly disjoint.
+    if _system(system) != "Windows":
+        cmd = get_flatpak_streamrip_path(environ=environ, isfile=isfile)
+        if cmd:
+            return cmd
+
     cmd = get_bundled_streamrip_path(
         frozen=frozen, system=system, meipass=meipass, executable=executable,
         isfile=isfile, find_spec=find_spec)
@@ -229,6 +267,8 @@ def describe_streamrip_command(cmd):
         return "not found"
     if len(cmd) >= 2 and cmd[1] == RUN_STREAMRIP_FLAG:
         return "bundled streamrip (packaged build)"
+    if cmd[0] in flatpak.BUNDLED_STREAMRIP_CANDIDATES:
+        return f"{cmd[0]} (bundled in Flatpak)"
     return cmd[0]
 
 

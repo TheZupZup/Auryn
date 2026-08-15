@@ -1,2 +1,8 @@
 __pycache__
 dist/
+
+# flatpak-builder working directories and exported artifacts
+.flatpak-builder/
+build-dir/
+repo/
+*.flatpak
