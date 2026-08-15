@@ -284,7 +284,8 @@ Two quirks worth knowing when reading that file:
   `org.freedesktop.Sdk` ships it. That holds for the **build** environment but
   not for the `org.gnome.Platform` **runtime**, and `pytest` imports it — so
   the script passes `--ignore-installed=packaging` to bundle it anyway. The
-  dependency closure is verifiably complete for linux / CPython 3.12.
+  dependency closure is verifiably complete for linux / CPython 3.13 (the
+  runtime's interpreter).
 
 ---
 
@@ -298,20 +299,39 @@ Still to do before this can be submitted:
    release.
 2. **Move the manifest to a Flathub repo.** Submission happens by PR to
    `flathub/flathub`, with the manifest named after the app ID at the repo root.
-3. **Make the official linter gating.** CI already runs both lints, but
-   non-gating (`continue-on-error`). The manifest lint currently reports **no
-   findings**; the repo lint — the stricter of the two, checking AppStream
-   completeness, the icon, screenshots and exported files — was wired up later
-   and its output should be read from the latest `Flatpak` workflow run before
-   submitting. Locally:
+3. **Make the official linter gating.** CI runs both lints today, but
+   non-gating (`continue-on-error`). Current status, from the `Flatpak`
+   workflow:
+
+   - `flatpak-builder-lint manifest` — **no findings**.
+   - `flatpak-builder-lint repo` — two errors, both the screenshot-mirroring
+     issue described in the next item. Everything else it checks (AppStream
+     completeness, the icon, the desktop entry, exported file naming) passes.
+
+   Run them locally with:
    ```sh
    flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
        manifest packaging/flatpak/io.github.thezupzup.Auryn.yml
    flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
    ```
-4. **Screenshot hosting.** The metainfo points at a `raw.githubusercontent.com`
-   URL, which works but should be reviewed against Flathub's screenshot
-   guidance (size, and one that reflects the current UI).
+4. **Screenshot mirroring — expected to fail outside Flathub, no action
+   needed here.** The repo lint reports:
+   ```
+   "errors": [
+       "appstream-external-screenshot-url",
+       "appstream-screenshots-not-mirrored-in-ostree"
+   ]
+   ```
+   Both are the same thing: our metainfo points at a
+   `raw.githubusercontent.com` URL rather than `https://dl.flathub.org/media`,
+   and the built ostree repo has no mirrored copy. **Flathub's own buildbot
+   performs that mirroring at publish time** — it is not something this
+   repository can do, and any build outside Flathub infrastructure will report
+   these two errors. Expect them to clear on submission rather than trying to
+   fix them here.
+
+   What *is* worth doing before submitting: check the screenshot still
+   reflects the current UI and meets Flathub's size guidance.
 5. **Version baking.** `.deb` / `.rpm` bake the release version into
    `core/version.py`; the Flatpak does not, so it reports `<BASE_VERSION>-dev`.
    That is honest for an experimental build, but a Flathub release should bake
