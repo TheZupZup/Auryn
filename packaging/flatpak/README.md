@@ -298,7 +298,12 @@ Still to do before this can be submitted:
    release.
 2. **Move the manifest to a Flathub repo.** Submission happens by PR to
    `flathub/flathub`, with the manifest named after the app ID at the repo root.
-3. **Run the official linter**, which this repository's CI does not yet do:
+3. **Make the official linter gating.** CI already runs both lints, but
+   non-gating (`continue-on-error`). The manifest lint currently reports **no
+   findings**; the repo lint — the stricter of the two, checking AppStream
+   completeness, the icon, screenshots and exported files — was wired up later
+   and its output should be read from the latest `Flatpak` workflow run before
+   submitting. Locally:
    ```sh
    flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
        manifest packaging/flatpak/io.github.thezupzup.Auryn.yml
