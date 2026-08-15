@@ -62,6 +62,11 @@ modules:
   # network at build time, so the build is reproducible and Flathub-compatible.
   # Installs streamrip's console script at /app/bin/rip, which is what
   # core.flatpak resolves first inside the sandbox.
+  #
+  # Four C extensions (aiohttp, cffi, pycares, pycryptodomex) build from sdist
+  # here. Pillow is the exception and ships as a per-arch prebuilt wheel:
+  # streamrip pins Pillow<11, and Pillow 10.4.0's sdist does not compile
+  # against this runtime's Python 3.13 — see generate-python-sources.sh.
   - python3-streamrip.json
 
   - name: auryn

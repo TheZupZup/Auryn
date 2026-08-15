@@ -20,6 +20,29 @@ set -euo pipefail
 # file and the regenerated python3-streamrip.json together.
 STREAMRIP_VERSION="${1:-2.1.0}"
 
+# IMPORTANT — one manual step after regenerating.
+#
+# The generator emits Pillow as an sdist, which does NOT compile against the
+# Python 3.13 in org.gnome.Platform//50: streamrip pins Pillow<11, and Pillow
+# only gained 3.13 source support in 11.0, so building 10.4.0's src/_webp.c
+# fails on GCC 14 ("incompatible pointer types", now an error).
+#
+# Pillow 10.4.0 *does* publish cp313 manylinux wheels, so the committed
+# python3-streamrip.json replaces the Pillow sdist with two prebuilt wheels
+# carrying "only-arches" (x86_64 and aarch64). Re-apply that swap after any
+# regeneration, or generate it directly with a flatpak-aware invocation:
+#
+#   flatpak-pip-generator.py --prefer-wheels=pillow \
+#       --runtime=org.gnome.Sdk//50 --ignore-installed=packaging \
+#       --output python3-streamrip "streamrip==${STREAMRIP_VERSION}"
+#
+# (--prefer-wheels requires --runtime because the generator queries the
+# runtime for its platform tags, so it only works where flatpak is installed.
+# This script does not assume that.)
+#
+# Once streamrip relaxes its Pillow<11 pin, Pillow 11.x builds from sdist on
+# 3.13 and the swap can be dropped entirely.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GENERATOR_URL="https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/pip/flatpak-pip-generator.py"
 

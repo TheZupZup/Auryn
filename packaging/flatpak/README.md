@@ -244,14 +244,24 @@ flatpak uninstall --user --delete-data io.github.thezupzup.Auryn
 
 ## Bundled Python dependencies
 
-`python3-streamrip.json` pins streamrip and its entire dependency tree — 43
+`python3-streamrip.json` pins streamrip and its entire dependency tree — 44
 sources, each with an exact version and a `sha256` digest. Nothing is resolved
 from the network during the build, which is both reproducible and a Flathub
 requirement.
 
-Most sources are pure-Python `py3-none-any` wheels; five (`aiohttp`, `cffi`,
-`Pillow`, `pycares`, `pycryptodomex`) are sdists compiled in the sandbox
-against the GNOME SDK.
+Most sources are pure-Python `py3-none-any` wheels; four (`aiohttp`, `cffi`,
+`pycares`, `pycryptodomex`) are sdists compiled in the sandbox against the
+GNOME SDK.
+
+**Pillow is the exception**, and it is worth knowing why. streamrip 2.1.0 pins
+`Pillow<11`, and Pillow only gained Python 3.13 *source* support in 11.0 — so
+building the 10.4.0 sdist against this runtime's Python 3.13 fails on GCC 14
+(`src/_webp.c`, "incompatible pointer types", now an error rather than a
+warning). Pillow 10.4.0 *does* publish `cp313` manylinux wheels, so the two
+prebuilt wheels are pinned instead, one per architecture via `only-arches`.
+This is the same output `flatpak-pip-generator --prefer-wheels=pillow` would
+produce. Once streamrip relaxes the `Pillow<11` pin, 11.x builds from sdist on
+3.13 and the swap can be dropped.
 
 Auryn itself needs no bundled Python packages at all — its only non-stdlib
 import is PyGObject, which the runtime provides.
