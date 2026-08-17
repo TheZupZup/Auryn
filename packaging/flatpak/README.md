@@ -91,8 +91,17 @@ finish-args:
 | `--share=ipc` | Shared memory with the display server (MIT-SHM). Conventionally paired with X11 access. |
 | `--socket=wayland` | Native Wayland display. |
 | `--socket=fallback-x11` | X11 **only** when there is no Wayland session — not an unconditional X11 socket. |
-| `--filesystem=xdg-music` | The default download destination (`~/Music`). |
-| `--filesystem=xdg-download` | The obvious second destination (`~/Downloads`). |
+| `--filesystem=xdg-music` | The default download destination. |
+| `--filesystem=xdg-download` | The obvious second destination. |
+
+Note that `xdg-music` grants the user's **configured** music directory, which
+is localized — `~/Musik` on a German system, `~/Musique` on a French one. Auryn
+resolves that directory from the `user-dirs.dirs` file flatpak writes into the
+sandbox's config dir, rather than assuming `~/Music`; otherwise a first-run
+user on a non-English system would be handed a default destination the sandbox
+neither mounts nor lets them create, and the writability preflight would fail
+before their first download. See `default_download_dir` in
+`src/core/flatpak.py`. `flatpak run … --doctor` prints the resolved path.
 
 Deliberately **not** granted:
 

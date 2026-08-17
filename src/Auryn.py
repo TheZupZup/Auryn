@@ -365,8 +365,21 @@ def is_first_launch():
     return not os.path.exists(auryn_config_path())
 
 
+def default_download_folder():
+    """The out-of-the-box download destination.
+
+    Inside Flatpak this resolves the *configured* XDG music directory that the
+    ``--filesystem=xdg-music`` permission actually grants — ``~/Musik`` on a
+    German system, ``~/Musique`` on a French one. Hardcoding ``~/Music`` there
+    would hand a first-run user a path the sandbox neither mounts nor lets them
+    create, so the writability preflight would fail before their first
+    download. Outside Flatpak this is ``~/Music`` exactly as before.
+    """
+    return flatpak.default_download_dir() or os.path.expanduser("~/Music")
+
+
 DEFAULT_CONFIG = {
-    "download_folder": os.path.expanduser("~/Music"),
+    "download_folder": default_download_folder(),
     "quality_level": 3,
     # Organise finished downloads into a tidy NAS / Jellyfin / Symfonium
     # library tree (<Album Artist>/<Album>/<Quality>/…). Post-processing only;
@@ -439,7 +452,7 @@ def run_doctor(verbose=False):
         "/usr/bin/rip",
     ]
     cfg_path = os.path.join(resolve_config_dir(), "config.toml")
-    folder = os.path.expanduser("~/Music")
+    folder = default_download_folder()
     packaged = streamrip_exec.is_windows_packaged_build()
     configured_rip = (os.environ.get("AURYN_STREAMRIP")
                       or os.environ.get("AURYN_RIP"))
@@ -620,7 +633,7 @@ class AurynApp:
         # ── État interne ──
         self._config           = load_config()
         self._process          = None
-        self._dest_folder      = self._config.get("download_folder", os.path.expanduser("~/Music"))
+        self._dest_folder      = self._config.get("download_folder", default_download_folder())
         self._track_done       = 0
         self._total_tracks     = 0
         self._last_known_error = None

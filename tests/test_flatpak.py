@@ -154,6 +154,89 @@ def test_auryn_dirs_none_outside_sandbox():
     assert fp.streamrip_config_dir(environ={}, isfile=nothing) is None
 
 
+# ── XDG user directories / default download folder ──────────────────────────
+
+# What flatpak writes into the sandbox's config dir when xdg-* permissions are
+# granted. Localized here (German) because that is exactly the case a
+# hardcoded ~/Music gets wrong.
+LOCALIZED_USER_DIRS = (
+    '# This file is written by xdg-user-dirs-update\n'
+    'XDG_DESKTOP_DIR="$HOME/Schreibtisch"\n'
+    'XDG_DOWNLOAD_DIR="$HOME/Downloads"\n'
+    'XDG_MUSIC_DIR="$HOME/Musik"\n'
+)
+
+SANDBOX_ENV_HOME = dict(SANDBOX_ENV, HOME="/home/u")
+
+
+def reader(text):
+    """A read_text stand-in returning fixed content for any path."""
+    return lambda _path: text
+
+
+def missing_file(_path):
+    raise FileNotFoundError("no user-dirs.dirs")
+
+
+def test_read_user_dirs_parses_and_expands_home():
+    dirs = fp.read_user_dirs(environ=SANDBOX_ENV_HOME,
+                             read_text=reader(LOCALIZED_USER_DIRS))
+    assert dirs["MUSIC"] == "/home/u/Musik"
+    assert dirs["DOWNLOAD"] == "/home/u/Downloads"
+    assert dirs["DESKTOP"] == "/home/u/Schreibtisch"
+
+
+def test_read_user_dirs_expands_braced_home():
+    dirs = fp.read_user_dirs(environ=SANDBOX_ENV_HOME,
+                             read_text=reader('XDG_MUSIC_DIR="${HOME}/Musique"\n'))
+    assert dirs["MUSIC"] == "/home/u/Musique"
+
+
+def test_read_user_dirs_accepts_absolute_paths():
+    dirs = fp.read_user_dirs(environ=SANDBOX_ENV_HOME,
+                             read_text=reader('XDG_MUSIC_DIR="/mnt/nas/music"\n'))
+    assert dirs["MUSIC"] == "/mnt/nas/music"
+
+
+def test_read_user_dirs_empty_when_file_missing():
+    assert fp.read_user_dirs(environ=SANDBOX_ENV_HOME, read_text=missing_file) == {}
+
+
+def test_read_user_dirs_ignores_junk_lines():
+    dirs = fp.read_user_dirs(
+        environ=SANDBOX_ENV_HOME,
+        read_text=reader('# comment\nnonsense\nXDG_MUSIC_DIR="$HOME/Musik"\n'))
+    assert dirs == {"MUSIC": "/home/u/Musik"}
+
+
+def test_user_special_dir_returns_none_when_absent():
+    assert fp.user_special_dir("MUSIC", environ=SANDBOX_ENV_HOME,
+                               read_text=missing_file) is None
+
+
+def test_default_download_dir_honours_localized_music_dir():
+    # The bug this guards: --filesystem=xdg-music grants ~/Musik on a German
+    # system, so defaulting to ~/Music would hand the user an unwritable path.
+    assert fp.default_download_dir(
+        environ=SANDBOX_ENV_HOME, isfile=nothing,
+        read_text=reader(LOCALIZED_USER_DIRS)) == "/home/u/Musik"
+
+
+def test_default_download_dir_falls_back_to_home_music():
+    # No user-dirs.dirs in the sandbox: xdg-music maps to ~/Music, so do we.
+    assert fp.default_download_dir(
+        environ=SANDBOX_ENV_HOME, isfile=nothing,
+        read_text=missing_file) == "/home/u/Music"
+
+
+def test_default_download_dir_none_outside_flatpak():
+    # Outside the sandbox this must stay inert so ~/Music is used exactly as
+    # before for source / .deb / .rpm installs.
+    assert fp.default_download_dir(
+        environ={}, isfile=nothing,
+        read_text=reader(LOCALIZED_USER_DIRS)) is None
+
+
 # ── diagnostics ─────────────────────────────────────────────────────────────
 
 def test_describe_environment_empty_outside_sandbox():

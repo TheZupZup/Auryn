@@ -41,6 +41,7 @@ paths.
 """
 
 import os
+import re
 
 # Present in every Flatpak sandbox; the canonical, documented way to detect
 # one from inside. Checked before $FLATPAK_ID because the file cannot be
@@ -175,6 +176,82 @@ def streamrip_config_dir(environ=None, isfile=None):
     return os.path.join(config_home(environ), "streamrip")
 
 
+# ── XDG user directories (Music, Downloads …) ───────────────────────────────
+
+# Flatpak writes a ``user-dirs.dirs`` into the app's config directory listing
+# the XDG user directories the sandbox actually has access to, precisely so an
+# app can resolve them without seeing the host's ~/.config. We parse that file
+# rather than assuming English directory names.
+USER_DIRS_FILE = "user-dirs.dirs"
+
+# XDG_MUSIC_DIR="$HOME/Musik"  /  XDG_DOWNLOAD_DIR="/mnt/big/dl"
+_USER_DIR_RE = re.compile(r'^\s*XDG_([A-Z_]+)_DIR\s*=\s*"(.*)"\s*$')
+
+
+def read_user_dirs(environ=None, read_text=None):
+    """Parse ``$XDG_CONFIG_HOME/user-dirs.dirs`` into ``{"MUSIC": path, …}``.
+
+    Returns ``{}`` when the file is missing or unreadable — every caller has a
+    sane fallback, so a missing file must never be an error.
+    """
+    path = os.path.join(config_home(environ), USER_DIRS_FILE)
+    if read_text is None:
+        def read_text(p):
+            with open(p, "r", encoding="utf-8") as fh:
+                return fh.read()
+    try:
+        text = read_text(path)
+    except OSError:
+        return {}
+    except Exception:
+        return {}
+
+    home = _environ(environ).get("HOME") or os.path.expanduser("~")
+    dirs = {}
+    for line in (text or "").split("\n"):
+        match = _USER_DIR_RE.match(line)
+        if not match:
+            continue
+        key, value = match.group(1), match.group(2)
+        # The file uses $HOME, sometimes braced. Nothing else is substituted.
+        value = value.replace("${HOME}", home).replace("$HOME", home)
+        if value:
+            dirs[key] = value
+    return dirs
+
+
+def user_special_dir(name, environ=None, read_text=None):
+    """Resolve one XDG user directory (e.g. ``"MUSIC"``), or None.
+
+    Only meaningful inside Flatpak, where the sandbox's ``user-dirs.dirs``
+    describes the directories actually granted to the app.
+    """
+    return read_user_dirs(environ, read_text).get(name) or None
+
+
+def default_download_dir(environ=None, isfile=None, read_text=None):
+    """The default download destination inside Flatpak, or None outside it.
+
+    The manifest grants ``--filesystem=xdg-music``, which maps the user's
+    *configured* music directory into the sandbox — ``~/Musik`` on a German
+    system, ``~/Musique`` on a French one. A hardcoded ``~/Music`` default
+    would therefore point at a path that is neither mounted nor creatable
+    (``$HOME`` is read-only in the sandbox), and Auryn's first-run writability
+    check would fail before the user could download anything.
+
+    Falls back to ``~/Music`` when the sandbox exposes no ``user-dirs.dirs``,
+    which is also what ``xdg-music`` maps to when the user has no configured
+    music directory.
+    """
+    if not is_flatpak(environ, isfile):
+        return None
+    music = user_special_dir("MUSIC", environ, read_text)
+    if music:
+        return music
+    home = _environ(environ).get("HOME") or os.path.expanduser("~")
+    return os.path.join(home, "Music")
+
+
 # ── Diagnostics ─────────────────────────────────────────────────────────────
 
 def describe_environment(environ=None, isfile=None):
@@ -192,4 +269,5 @@ def describe_environment(environ=None, isfile=None):
         ("streamrip config dir", streamrip_config_dir(environ, isfile)),
         ("Auryn config dir", auryn_config_dir(environ, isfile)),
         ("Auryn log dir", auryn_state_dir(environ, isfile)),
+        ("Default download dir", default_download_dir(environ, isfile)),
     ]
