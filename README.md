@@ -14,6 +14,7 @@
 <p align="center">
   <a href="https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/python-app.yml/badge.svg" alt="Python application CI"></a>
   <a href="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/linux-packages.yml/badge.svg" alt="Linux packages"></a>
+  <a href="https://github.com/TheZupZup/Auryn/actions/workflows/flatpak.yml"><img src="https://github.com/TheZupZup/Auryn/actions/workflows/flatpak.yml/badge.svg" alt="Flatpak"></a>
   <a href="https://github.com/TheZupZup/Auryn/releases/latest"><img src="https://img.shields.io/github/v/release/TheZupZup/Auryn?label=release" alt="Latest release"></a>
   <a href="https://www.mozilla.org/en-US/MPL/2.0/"><img src="https://img.shields.io/github/license/TheZupZup/Auryn" alt="License: MPL-2.0"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20(experimental)-2C8770" alt="Platform: Linux, experimental Windows">
@@ -117,6 +118,23 @@ services you access.
 Grab the latest packages from the
 [**Releases**](https://github.com/TheZupZup/Auryn/releases/latest) page.
 
+**Any Linux distribution (Flatpak — experimental)**
+
+The Flatpak bundles **Auryn, streamrip and every Python dependency**, so there
+is nothing to `pip install` and no Python environment to maintain. It is not on
+Flathub yet; build it locally from a checkout:
+
+```bash
+flatpak install --user -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
+flatpak-builder --user --install --force-clean \
+    build-dir packaging/flatpak/io.github.thezupzup.Auryn.yml
+flatpak run io.github.thezupzup.Auryn
+```
+
+See [Flatpak (experimental)](#flatpak-experimental) below, or
+[`packaging/flatpak/README.md`](packaging/flatpak/README.md) for the full
+guide.
+
 **Debian / Ubuntu / Linux Mint (`.deb`)**
 
 ```bash
@@ -218,6 +236,74 @@ Linux is Auryn's primary, best-supported platform.
 
 ---
 
+## Flatpak (experimental)
+
+The Flatpak is Auryn's path to a **universal, one-command Linux install**.
+Unlike the `.deb` / `.rpm` packages — which leave streamrip for you to install
+via `pipx`/`pip` — the Flatpak **bundles streamrip and its entire Python
+dependency tree**, so there is nothing to install by hand and nothing to keep
+working after a system Python upgrade.
+
+It builds and installs locally today. **Flathub submission is not done yet**;
+what remains is tracked in
+[`packaging/flatpak/README.md`](packaging/flatpak/README.md).
+
+### Build and install locally
+
+```bash
+# One-time: tooling and the GNOME runtime
+sudo apt install flatpak flatpak-builder     # or: sudo dnf install …
+flatpak remote-add --if-not-exists --user \
+    flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
+
+# From the repository root
+flatpak-builder --user --install --force-clean \
+    build-dir packaging/flatpak/io.github.thezupzup.Auryn.yml
+
+flatpak run io.github.thezupzup.Auryn
+```
+
+The first build compiles a few C extensions from source and takes a while;
+later builds are much faster. A prebuilt `Auryn.flatpak` bundle is also
+uploaded as an artifact by the **Flatpak** CI workflow on every push and PR.
+
+### Permissions, and why
+
+| Permission | Why |
+| --- | --- |
+| `--share=network` | streamrip downloads; Auryn fetches cover art and lyrics. |
+| `--share=ipc` | Shared memory with the display server (paired with X11). |
+| `--socket=wayland` | Native Wayland display. |
+| `--socket=fallback-x11` | X11 only when there is no Wayland session. |
+| `--filesystem=xdg-music` | Save downloads to `~/Music` (the default). |
+| `--filesystem=xdg-download` | Save downloads to `~/Downloads`. |
+
+Auryn does **not** request access to your whole home directory. To download to
+a NAS share or any other custom path, grant just that path:
+
+```bash
+flatpak override --user --filesystem=/mnt/nas/music io.github.thezupzup.Auryn
+```
+
+### Where things are stored
+
+| What | Path |
+| --- | --- |
+| streamrip config (incl. your ARL) | `~/.var/app/io.github.thezupzup.Auryn/config/streamrip/config.toml` |
+| Auryn preferences | `~/.var/app/io.github.thezupzup.Auryn/config/Auryn/config.json` |
+| Auryn logs | `~/.var/app/io.github.thezupzup.Auryn/.local/state/Auryn/` |
+| Your music | wherever you chose — on the real filesystem, not in the sandbox |
+
+Self-check inside the sandbox, which prints the resolved streamrip path and
+each of these directories (never your credentials):
+
+```bash
+flatpak run --command=auryn io.github.thezupzup.Auryn --doctor --verbose
+```
+
+---
+
 ## Windows (experimental)
 
 Windows support is **experimental but working** — and the packaged build is
@@ -291,6 +377,7 @@ attach.
 Auryn is actively developed. Planned and in-progress ideas — contributions
 welcome:
 
+- **Flathub publication** of the Flatpak, so Linux install is one click.
 - A smoother Windows experience (installer + optional code signing).
 - More resilient TIDAL re-authentication / token repair.
 - More library-layout options for different media servers.

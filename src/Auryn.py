@@ -34,6 +34,7 @@ from core import deezer
 from core import library
 from core import quality as qual
 from core import streamrip_exec
+from core import flatpak
 from core import version as _version
 
 APP_NAME = "Auryn"
@@ -46,6 +47,9 @@ SYSTEM_NAME = platform.system()
 IS_WINDOWS = SYSTEM_NAME == "Windows"
 IS_MACOS = SYSTEM_NAME == "Darwin"
 IS_UNSUPPORTED_OS = IS_WINDOWS or IS_MACOS
+# True only inside the Flatpak sandbox, where streamrip ships with the app and
+# Auryn's own config/log directories move under ~/.var/app/<app-id>/.
+IS_FLATPAK = flatpak.is_flatpak()
 
 pty = None
 fcntl = None
@@ -336,6 +340,16 @@ def toml_escape(value):
 
 
 def resolve_auryn_data_dir():
+    """Directory holding Auryn's own preferences (``config.json``).
+
+    Inside Flatpak ``$HOME`` is not writable, so this moves to the sandboxed
+    ``$XDG_CONFIG_HOME/Auryn`` (``~/.var/app/<app-id>/config/Auryn``). Outside
+    Flatpak the historical paths are returned unchanged, so source, ``.deb``
+    and ``.rpm`` installs keep reading and writing ``~/.config/Auryn``.
+    """
+    sandboxed = flatpak.auryn_config_dir()
+    if sandboxed:
+        return sandboxed
     if IS_WINDOWS:
         base = os.environ.get("APPDATA", os.path.expanduser("~"))
         return os.path.join(base, "Auryn")
@@ -351,8 +365,21 @@ def is_first_launch():
     return not os.path.exists(auryn_config_path())
 
 
+def default_download_folder():
+    """The out-of-the-box download destination.
+
+    Inside Flatpak this resolves the *configured* XDG music directory that the
+    ``--filesystem=xdg-music`` permission actually grants — ``~/Musik`` on a
+    German system, ``~/Musique`` on a French one. Hardcoding ``~/Music`` there
+    would hand a first-run user a path the sandbox neither mounts nor lets them
+    create, so the writability preflight would fail before their first
+    download. Outside Flatpak this is ``~/Music`` exactly as before.
+    """
+    return flatpak.default_download_dir() or os.path.expanduser("~/Music")
+
+
 DEFAULT_CONFIG = {
-    "download_folder": os.path.expanduser("~/Music"),
+    "download_folder": default_download_folder(),
     "quality_level": 3,
     # Organise finished downloads into a tidy NAS / Jellyfin / Symfonium
     # library tree (<Album Artist>/<Album>/<Quality>/…). Post-processing only;
@@ -391,6 +418,10 @@ def save_config(data):
 
 
 def resolve_log_dir():
+    """Directory for Auryn's run logs (same Flatpak reasoning as above)."""
+    sandboxed = flatpak.auryn_state_dir()
+    if sandboxed:
+        return sandboxed
     if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
         return os.path.join(base, "Auryn", "logs")
@@ -409,9 +440,10 @@ def open_in_file_manager(path):
 def run_doctor(verbose=False):
     """Fail-fast environment check; prints only the first problem found.
 
-    On a packaged Windows build it additionally reports the packaged status,
-    whether the bundled streamrip was found, the streamrip config path and
-    whether Deezer is configured — all without ever exposing the ARL.
+    On a packaged Windows build, and inside the Flatpak, it additionally
+    reports the packaging mode, whether the bundled streamrip was found, the
+    sandbox-correct streamrip config path and whether Deezer is configured —
+    all without ever exposing the ARL.
     """
     print(f"INFO  {APP_NAME} version: {APP_VERSION}")
     rip_search_paths = [
@@ -420,7 +452,7 @@ def run_doctor(verbose=False):
         "/usr/bin/rip",
     ]
     cfg_path = os.path.join(resolve_config_dir(), "config.toml")
-    folder = os.path.expanduser("~/Music")
+    folder = default_download_folder()
     packaged = streamrip_exec.is_windows_packaged_build()
     configured_rip = (os.environ.get("AURYN_STREAMRIP")
                       or os.environ.get("AURYN_RIP"))
@@ -437,6 +469,21 @@ def run_doctor(verbose=False):
             print(tidal_auth.auth_debug_report(cfg_path))
         except Exception as exc:
             print(f"INFO  TIDAL auth report unavailable: {exc}")
+
+    # Flatpak report (always shown, not just in verbose mode). The paths below
+    # are the sandboxed ones, so a user pasting `--doctor` output into an issue
+    # reports where their config *actually* lives, not the host path.
+    if IS_FLATPAK:
+        print("INFO  Auryn Flatpak mode detected (sandboxed build).")
+        for label, value in flatpak.describe_environment():
+            print(f"INFO  {label}: {value}")
+        if not streamrip_exec.get_flatpak_streamrip_path():
+            print("FAIL  Bundled streamrip NOT found inside the Flatpak.")
+        try:
+            arl_present = bool(deezer.deezer_config_status(cfg_path).get("arl_present"))
+        except Exception:
+            arl_present = False
+        print(f"INFO  Deezer configured: {'yes' if arl_present else 'no'}")
 
     # Packaged Windows report (always shown, not just in verbose mode).
     if packaged:
@@ -466,7 +513,10 @@ def run_doctor(verbose=False):
         return False
 
     if not rip_cmd:
-        if packaged:
+        if IS_FLATPAK:
+            print("FAIL  Bundled streamrip not found inside the Auryn Flatpak "
+                  "(expected at /app/bin/rip) — the Flatpak build is incomplete.")
+        elif packaged:
             print("FAIL  Bundled streamrip not found inside the Auryn package.")
         else:
             print("FAIL  streamrip (rip) not found in PATH or common locations.")
@@ -583,7 +633,7 @@ class AurynApp:
         # ── État interne ──
         self._config           = load_config()
         self._process          = None
-        self._dest_folder      = self._config.get("download_folder", os.path.expanduser("~/Music"))
+        self._dest_folder      = self._config.get("download_folder", default_download_folder())
         self._track_done       = 0
         self._total_tracks     = 0
         self._last_known_error = None
@@ -689,10 +739,12 @@ class AurynApp:
         self._is_first_launch = is_first_launch()
         if self._is_first_launch:
             GLib.idle_add(self._show_first_launch_welcome)
-        if streamrip_exec.is_windows_packaged_build():
-            # streamrip ships inside the package: never prompt to pip-install
-            # it. Instead, guide first-run users straight into Deezer setup.
-            GLib.idle_add(self._windows_first_run_setup)
+        if IS_FLATPAK or streamrip_exec.is_windows_packaged_build():
+            # streamrip ships inside the package/sandbox: never prompt to
+            # pip-install it (inside Flatpak a --user pip install would land in
+            # the sandbox and vanish on update). Guide first-run users straight
+            # into Deezer setup instead.
+            GLib.idle_add(self._bundled_first_run_setup)
         else:
             GLib.idle_add(self._offer_streamrip_install)
         GLib.idle_add(self._first_run_health_check)
@@ -1543,7 +1595,12 @@ class AurynApp:
         issues = []
         rip_cmd = self._streamrip_cmd()
         if not rip_cmd:
-            if streamrip_exec.is_windows_packaged_build():
+            if IS_FLATPAK:
+                issues.append(
+                    "Bundled streamrip is missing from this Auryn Flatpak — "
+                    "expected it at /app/bin/rip. Reinstall the Flatpak."
+                )
+            elif streamrip_exec.is_windows_packaged_build():
                 issues.append(
                     "Bundled streamrip is missing from this Auryn package — "
                     "the download tool could not be located inside the app."
@@ -1590,7 +1647,13 @@ class AurynApp:
             "  • Download folder\n"
             "  • streamrip credentials and config\n\n"
         )
-        if streamrip_exec.is_windows_packaged_build():
+        if IS_FLATPAK:
+            body += (
+                "streamrip is included in this Auryn Flatpak — no separate "
+                "Python or streamrip install is required.\n"
+                "Downloads can be saved to your Music and Downloads folders."
+            )
+        elif streamrip_exec.is_windows_packaged_build():
             body += (
                 "streamrip is included in this Auryn package — no separate "
                 "Python or streamrip install is required."
@@ -1616,12 +1679,14 @@ class AurynApp:
         dlg.destroy()
         return False
 
-    def _windows_first_run_setup(self):
-        """Packaged Windows first-run: open Deezer setup if no ARL is saved.
+    def _bundled_first_run_setup(self):
+        """Bundled-streamrip first-run: open Deezer setup if no ARL is saved.
 
-        streamrip is bundled, so the only thing a new user must do is paste a
-        Deezer ARL. Show Setup proactively instead of letting the first
-        download fail. The ARL itself is never logged or displayed.
+        Used by both builds that ship streamrip with the app — the packaged
+        Windows build and the Flatpak. streamrip is already there, so the only
+        thing a new user must do is paste a Deezer ARL. Show Setup proactively
+        instead of letting the first download fail. The ARL itself is never
+        logged or displayed.
         """
         cfg = self._streamrip_config_path()
         try:
@@ -1987,7 +2052,11 @@ class AurynApp:
         rip_cmd = self._streamrip_cmd()
 
         if not rip_cmd:
-            if streamrip_exec.is_windows_packaged_build():
+            if IS_FLATPAK:
+                GLib.idle_add(self._log,
+                    "❌  Bundled streamrip is missing from this Auryn Flatpak.\n"
+                    "    Expected it at /app/bin/rip — reinstall the Flatpak.\n", "error")
+            elif streamrip_exec.is_windows_packaged_build():
                 GLib.idle_add(self._log,
                     "❌  Bundled streamrip is missing from this Auryn package.\n"
                     "    The download tool could not be located inside the app.\n", "error")

@@ -124,7 +124,89 @@ def test_system_streamrip_none_when_absent():
         isfile=lambda p: False) is None
 
 
+# ── Flatpak bundled streamrip ───────────────────────────────────────────────
+
+FLATPAK_ENV = {"FLATPAK_ID": "io.github.thezupzup.Auryn"}
+
+
+def test_flatpak_build_detection():
+    assert se.is_flatpak_build(environ=FLATPAK_ENV, isfile=lambda p: False) is True
+    assert se.is_flatpak_build(environ={}, isfile=lambda p: False) is False
+
+
+def test_flatpak_streamrip_resolved_inside_sandbox():
+    cmd = se.get_flatpak_streamrip_path(
+        environ=FLATPAK_ENV, isfile=lambda p: p == "/app/bin/rip")
+    assert cmd == ["/app/bin/rip"]
+
+
+def test_flatpak_streamrip_none_outside_sandbox():
+    assert se.get_flatpak_streamrip_path(
+        environ={}, isfile=lambda p: p == "/app/bin/rip") is None
+
+
 # ── full search order ───────────────────────────────────────────────────────
+
+def test_search_order_flatpak_beats_configured_and_system():
+    # Inside the Flatpak the bundled rip wins even when a stale configured
+    # path and a PATH hit both "exist" — neither points at anything real
+    # inside the sandbox.
+    cmd = se.get_streamrip_executable(
+        configured_path="/custom/rip",
+        frozen=False, system="Linux",
+        environ=FLATPAK_ENV,
+        isfile=lambda p: True,
+        which=lambda name: "/usr/bin/rip",
+    )
+    assert cmd == ["/app/bin/rip"]
+
+
+def test_search_order_flatpak_missing_falls_back_to_configured():
+    # A Flatpak whose build omitted streamrip must not dead-end: the normal
+    # configured/PATH search still runs.
+    cmd = se.get_streamrip_executable(
+        configured_path="/custom/rip",
+        frozen=False, system="Linux",
+        environ=FLATPAK_ENV,
+        isfile=lambda p: p == "/custom/rip",
+        which=lambda name: None,
+    )
+    assert cmd == ["/custom/rip"]
+
+
+def test_search_order_ignores_flatpak_probe_on_windows():
+    # Flatpak is Linux-only, so a Windows build must never consult /app/bin —
+    # the packaged-Windows bundle stays authoritative there.
+    cmd = se.get_streamrip_executable(
+        configured_path="/custom/rip",
+        frozen=True, system="Windows",
+        meipass="C:/app", executable="C:/app/Auryn.exe",
+        environ=FLATPAK_ENV,
+        isfile=lambda p: True,
+        find_spec=lambda name: object(),
+        which=lambda name: "/usr/bin/rip",
+    )
+    assert cmd == ["C:/app/rip.exe"]
+
+
+def test_search_order_unchanged_for_plain_linux_install():
+    # The .deb / .rpm / from-source path: no sandbox, no bundle, plain PATH.
+    cmd = se.get_streamrip_executable(
+        configured_path=None,
+        frozen=False, system="Linux",
+        environ={},
+        isfile=lambda p: False,
+        which=lambda name: "/usr/bin/rip",
+    )
+    assert cmd == ["/usr/bin/rip"]
+
+
+def test_describe_command_labels_flatpak_bundle():
+    label = se.describe_streamrip_command(["/app/bin/rip"])
+    assert "/app/bin/rip" in label
+    assert "Flatpak" in label
+
+
 
 def test_search_order_bundled_beats_configured_and_system():
     cmd = se.get_streamrip_executable(

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Auryn
+GenericName=Music Downloader
+Comment=Download and organise your music library with streamrip
+Exec=auryn
+Icon=io.github.thezupzup.Auryn
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=music;download;streamrip;deezer;qobuz;tidal;soundcloud;flac;
+StartupNotify=true
