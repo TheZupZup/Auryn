@@ -2933,8 +2933,14 @@ class AurynApp:
         meta = self._album_meta or {}
         artist = meta.get("artist", "")
         album = meta.get("album", "")
-        # Without album metadata we cannot build a clean artist/album path;
-        # leave the files where streamrip put them (no scary warning).
+        # TIDAL does not populate _album_meta through the API path. Recover
+        # artist/album only when streamrip's folder name is unambiguous.
+        if not artist and not album and qual.service_for_url(self._active_url) == "tidal":
+            inferred = library.album_info_from_streamrip_folder(
+                os.path.basename(os.path.normpath(folder)))
+            if inferred:
+                artist, album = inferred["artist"], inferred["album"]
+        # If we still lack metadata, do not move or rename any files.
         if not artist and not album:
             return None
         files = self._collect_files(folder)
