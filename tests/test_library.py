@@ -100,6 +100,18 @@ def test_album_folder_fallbacks():
     assert library.album_folder("") == library.FALLBACK_ALBUM
 
 
+def test_streamrip_tidal_folder_extracts_album_metadata():
+    info = library.album_info_from_streamrip_folder(
+        "Aaron Fraser-Nash - The Killer Doll Collection (2020) [MP4] [16B-44100kHz]")
+    assert info == {"artist": "Aaron Fraser-Nash", "album": "The Killer Doll Collection"}
+
+
+def test_streamrip_tidal_folder_does_not_guess_ambiguous_names():
+    assert library.album_info_from_streamrip_folder("Some Album [FLAC]") is None
+    assert library.album_info_from_streamrip_folder(" - Album [FLAC]") is None
+    assert library.album_info_from_streamrip_folder("Artist -  [MP4]") is None
+
+
 def test_quality_folder_with_and_without_specs():
     assert library.quality_folder("FLAC", 16, 44100) == "FLAC (16B-44100kHz)"
     assert library.quality_folder("FLAC", 24, 96000) == "FLAC (24B-96000kHz)"
