@@ -167,6 +167,25 @@ def album_folder(title, *, max_length=DEFAULT_MAX_COMPONENT):
     return safe_filename(title, max_length=max_length, fallback=FALLBACK_ALBUM)
 
 
+def album_info_from_streamrip_folder(name):
+    """Recover album artist/title from a streamrip-created album directory.
+
+    TIDAL album URLs have no metadata fetch path in Auryn yet, but streamrip
+    can create a folder like ``Artist - Album (2020) [MP4] [16B-44100kHz]``.
+    Only use this conservative fallback when there is an artist/title separator.
+    Never guess from a plain album name or from individual track filenames.
+    """
+    name = str(name or "").strip()
+    name = re.sub(r'(?:\s+\[[^\[\]]+\])+$', '', name)
+    name = re.sub(r'\s+\((?:19|20)\d{2}\)$', '', name)
+    if " - " not in name:
+        return None
+    artist, album = (part.strip() for part in name.split(" - ", 1))
+    if not artist or not album:
+        return None
+    return {"artist": artist, "album": album}
+
+
 def quality_folder(container, bit_depth=None, sampling_rate=None):
     """Folder name describing the audio quality, e.g. ``FLAC (16B-44100kHz)``.
 
