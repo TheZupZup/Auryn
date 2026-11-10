@@ -165,6 +165,37 @@ def test_plan3_playlist_name_fallback(tmp_path):
     assert os.path.basename(result) == "Playlist - deezer - 55555"
 
 
+def test_tidal_album_organizes_without_api_metadata(tmp_path):
+    base = str(tmp_path)
+    src = os.path.join(
+        base, "Aaron Fraser-Nash - The Killer Doll Collection (2020) "
+              "[MP4] [16B-44100kHz]")
+    track = "08. Aaron Fraser-Nash - Chucky Vs Billy.m4a"
+    _touch(os.path.join(src, track))
+    _touch(os.path.join(src, "cover.jpg"))
+
+    app = _app(base, album_meta=None,
+               url="https://tidal.com/browse/album/123456", quality="4")
+    result = app._organize_download(src)
+
+    expected = "Aaron Fraser-Nash/The Killer Doll Collection/AAC"
+    assert f"{expected}/{track}" in _tree(base)
+    assert f"{expected}/cover.jpg" in _tree(base)
+    assert result == os.path.join(
+        base, "Aaron Fraser-Nash", "The Killer Doll Collection")
+    assert not os.path.exists(src)
+
+
+def test_tidal_album_without_recognizable_folder_is_not_moved(tmp_path):
+    base = str(tmp_path)
+    src = os.path.join(base, "A folder without metadata")
+    _touch(os.path.join(src, "track.flac"))
+    app = _app(base, album_meta=None,
+               url="https://tidal.com/browse/album/123456", quality="4")
+    assert app._organize_download(src) == src
+    assert os.path.isfile(os.path.join(src, "track.flac"))
+
+
 # ── Test-plan item 4: settings toggles ─────────────────────────────────────
 
 def test_plan4_organize_disabled_leaves_files(tmp_path):
